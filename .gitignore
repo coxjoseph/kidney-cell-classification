@@ -159,4 +159,8 @@ cython_debug/
 #  option (not recommended) you can uncomment the following to ignore the entire idea folder.
 .idea/
 
+# Jupyter checkpoints
 .ipynb_checkpoints/
+
+# Project Data files (too big for GH)
+data/
