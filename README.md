@@ -68,7 +68,7 @@ python classify.py --codex /path/to/codex.tiff --he /path/to/he_stained_image.ti
 ```
 
 Replace `/path/to/codex.tiff` and `/path/to/he_stained_image.tiff` with the actual path to your files. This script will 
-segment, classify, and save the classification labels to a tiff file `classified_stain.tiff`. Optionally, this output
+segment, classify, and save the classification labels to a tiff file `classified_stain.tif`. Optionally, this output
 file can be set using the `--output` or `-o` flag in the classification script.
 
 ## Contributing
