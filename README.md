@@ -23,7 +23,7 @@ Before installation, ensure you have the following:
 
 In addition, we recommend having enough RAM to open both your CODEX file and your Stained Image file
 at the same time. While the classifier will still function without this, performance will be significantly
-impacted, and output results will be . 
+impacted, and output results will be worse. 
 
 ### Dependencies
 #### Setting Up a Virtual Environment
