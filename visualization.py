@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 import tifffile
 
 
-def load_tiff_as_array(file_path: Union[str, PathLike]) -> np.ndarray:
+def load_tiff_as_array(path: Union[str, PathLike]) -> np.ndarray:
     """
     Load a TIFF image and convert it to a numpy array.
 
@@ -15,22 +15,22 @@ def load_tiff_as_array(file_path: Union[str, PathLike]) -> np.ndarray:
     Returns:
     - A numpy array representing the image.
     """
-    with tifffile.TiffFile(file_path) as tiff:
-        image_array = tiff.asarray()
-    return image_array
+    with tifffile.TiffFile(path) as tiff:
+        array = tiff.asarray()
+    return array
 
 
-def display_channel_heatmaps(image_array: np.ndarray, channel_indices: list):
+def display_channel_heatmaps(array: np.ndarray, indices: list) -> None:
     """
     Display specified channels of the image as heatmaps.
 
     Parameters:
-    - image_array: A numpy array representing the image.
-    - channel_indices: A list of indices of the channels to be displayed.
+    - array: A numpy array representing the image.
+    - indices: A list of indices of the channels to be displayed.
     """
-    for index in channel_indices:
+    for index in indices:
         plt.figure(figsize=(10, 8))
-        plt.imshow(image_array[:, :, index], cmap='hot')
+        plt.imshow(array[:, :, index], cmap='hot')
         plt.title(f'Channel {index} Heatmap')
         plt.colorbar()
         plt.show()
