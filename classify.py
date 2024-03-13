@@ -16,9 +16,9 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument('--output', '-o', help='output tiff file (default to ./classified_stain.tif)',
                         type=str, default='classified_stain.tif')
 
-    args_ = parser.parse_args()
-    logger.debug(f'Received arguments: {args_}')
-    return args_
+    parsed_args = parser.parse_args()
+    logger.debug(f'Received arguments: {parsed_args}')
+    return parsed_args
 
 
 if __name__ == '__main__':
