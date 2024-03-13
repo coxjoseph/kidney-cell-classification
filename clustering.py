@@ -9,7 +9,7 @@ from cells import Cell
 logger = getLogger()
 
 
-def dimensionality_reduction(features: np.ndarray, num_components: Union[int, None] = None):
+def dimensionality_reduction(features: np.ndarray, num_components: Union[int, None] = None) -> np.ndarray:
     pca = PCA(n_components=num_components)
     reduced_features = pca.fit_transform(features)  # reduce dimensionality
     logger.info('Reduced dimensionality of feature space...')

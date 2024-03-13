@@ -15,7 +15,7 @@ def generate_feature_extractors() -> list[callable]:
     return methods
 
 
-def _example_feature_extractor(pixel_values: np.ndarray):
+def _example_feature_extractor(pixel_values: np.ndarray) -> np.ndarray:
     """
     Example feature extractor, which implements the channel-wise mean of the pixel values.
     Args:

@@ -36,4 +36,4 @@ if __name__ == '__main__':
     [cell.calculate_features(feature_extractors, codex) for cell in cells]
     cluster(cells)
 
-    classified_image = generate_classified_image(brightfield, cells, args, save=True)
+    generate_classified_image(brightfield, cells, args, save=True)

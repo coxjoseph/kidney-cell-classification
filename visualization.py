@@ -20,7 +20,7 @@ def load_tiff_as_array(path: Union[str, PathLike]) -> np.ndarray:
     return array
 
 
-def display_channel_heatmaps(array: np.ndarray, indices: list):
+def display_channel_heatmaps(array: np.ndarray, indices: list) -> None:
     """
     Display specified channels of the image as heatmaps.
 
