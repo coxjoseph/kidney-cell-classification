@@ -40,7 +40,7 @@ def generate_classified_image(brightfield: np.ndarray,
     elif num_colors <= 20:
         cmap = plt.get_cmap('tab20')
     else:
-        raise ValueError(f'Number of labels  ({len(set(labels))}) is more than the number of colors we can generate. '
+        raise ValueError(f'Number of labels  ({num_colors}) is more than the number of colors we can generate. '
                          f'Implement more colors or change the clustering parameters to output fewer labels')
 
     plt.figure()
