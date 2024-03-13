@@ -12,7 +12,7 @@ def parse_arguments() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description='Script to classify cells in a H&E stained image with a paired CODEX '
                                                  'file')
     parser.add_argument('--codex', '-c', required=True, help='Path to CODEX tiff file', type=str)
-    parser.add_argument('--he', '-h', required=True, help='Path to H&E stained tiff file', type=str)
+    parser.add_argument('--he', '-e', required=True, help='Path to H&E stained tiff file', type=str)
     parser.add_argument('--output', '-o', help='output tiff file (default to ./classified_stain.tif)',
                         type=str, default='classified_stain.tif')
     parser.add_argument('--verbose', '-v', action='store_true', help='display debug output')
@@ -25,7 +25,7 @@ if __name__ == '__main__':
     args = parse_arguments()
 
     log_level = 10 if args.verbose else 20
-    logging.basicConfig(level=log_level, format='%(asctime)s - $(levelname)s: %(message)s')
+    logging.basicConfig(level=log_level, format='%(asctime)s - %(levelname)s : %(message)s')
     logger.debug(f'Received arguments: {args}')
 
     brightfield, codex = load_images(args)

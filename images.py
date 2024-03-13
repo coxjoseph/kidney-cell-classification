@@ -11,8 +11,9 @@ logger = getLogger()
 
 def load_images(args_: argparse.Namespace) -> tuple[np.ndarray, np.ndarray]:
     codex_array, he_array = tifffile.TiffFile(args_.codex).asarray(), tifffile.TiffFile(args_.he).asarray()
+    codex_array = np.transpose(codex_array)  # Codex is channel first
 
-    logger.debug(f'{codex_array.shape=} | {he_array.shape=}')
+    logger.debug(f'{codex_array.dtype} | {he_array.shape=}')
 
     target_shape = he_array.shape
     codex_array = resize(codex_array, output_shape=(target_shape[0], target_shape[1]), order=1, mode='reflect',
