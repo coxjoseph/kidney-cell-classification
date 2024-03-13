@@ -23,6 +23,8 @@ def parse_arguments() -> argparse.Namespace:
 
 if __name__ == '__main__':
     args = parse_arguments()
+    logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - $(levelname)s - %(message)s')
+    logging.basicConfig(level=logging.INFO, format='%(asctime)s - $(levelname)s - %(message)s')
 
     brightfield, codex = load_images(args)
 
