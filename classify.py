@@ -15,6 +15,7 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument('--he', '-h', required=True, help='Path to H&E stained tiff file', type=str)
     parser.add_argument('--output', '-o', help='output tiff file (default to ./classified_stain.tif)',
                         type=str, default='classified_stain.tif')
+    parser.add_argument('--verbose', '-v', action='store_true', help='display debug output')
 
     parsed_args = parser.parse_args()
     logger.debug(f'Received arguments: {parsed_args}')
@@ -23,8 +24,9 @@ def parse_arguments() -> argparse.Namespace:
 
 if __name__ == '__main__':
     args = parse_arguments()
-    logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - $(levelname)s - %(message)s')
-    logging.basicConfig(level=logging.INFO, format='%(asctime)s - $(levelname)s - %(message)s')
+
+    log_level = 10 if args.verbose else 20
+    logging.basicConfig(level=log_level, format='%(asctime)s - $(levelname)s: %(message)s')
 
     brightfield, codex = load_images(args)
 
