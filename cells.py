@@ -2,7 +2,9 @@ from dataclasses import dataclass
 from typing import Union
 import numpy as np
 from logging import getLogger
-
+from skimage.color import separate_stains, hdx_from_rgb, rgb_from_hdx
+from skimage import filters, morphology, measure
+import matplotlib.pyplot as plt
 
 logger = getLogger()
 
@@ -59,40 +61,100 @@ class Cell:
         self.features = tuple(features)
 
 
-def segment_nuclei(brightfield: np.ndarray) -> list[Nucleus]:
-    # Example for now:
-    example_nuclei = [Nucleus(center=(x, y)) for x, y in zip(range(5), range(5))]
-    logger.info(f'Segmented {len(example_nuclei)} nuclei')
-    # TODO: create a method/methods that look at the brightfield array (should we switch to the codex image?) and
-    #  create a list of center-points for nuclei. Once we have that uncomment below:
+def segment_nuclei(brightfield: np.ndarray, display: bool = True) -> list[Nucleus]:
+    ihc_hdx = separate_stains(brightfield, hdx_from_rgb)
 
-    # centers = get_center_points(brightfield)
-    # logger.info(f'Segmented {len(centers)} nuclei')
-    # return [Nucleus(center=center) for center in centers]
-    return example_nuclei
+    if display:
+        show_separated_stains(ihc_hdx)
+
+    centers = get_center_points(brightfield, display=display)
+    logger.info(f'Segmented {len(centers)} nuclei')
+    return [Nucleus(center=center) for center in centers]
 
 
-def calculate_radii_from_nuclei(nuclei: list[Nucleus], brightfield: Union[np.ndarray, None] = None) -> list[int]:
-    # Example for now:
-    example_radii = [1] * len(nuclei)
+def calculate_radii_from_nuclei(nuclei: list[Nucleus]) -> tuple[int]:
+    """
+    Calculate a tuple of nucleus radii from a list of nuclei. The order of elements in the returned tuple corresponds to
+        the order of the nuclei. This method assumes that all nuclei are spherical and only calculates the radius as the
+        minimum distance between nuclei centers. For more advanced methods can use watershed or voronoi tessellation,
+        both of which are common in histology.
 
-    # TODO: look at the nuclei and, optionally, the brightfield image (again, maybe codex?) and creates a list of
-    #  radii for each nucleus. These lists should be linked to each other (best to make them as tuples to enforce
-    #  this? maybe a dictionary? seems overkill). This could be density based, or could be just a flat value that we
-    #  calculate based on the centers. I don't see a way to do this in less than O(n^2) time if we do something
-    #  fancy, but we could speedup with just selecting the half the minimum distance between centers I guess. Once
-    #  implemented uncomment below:
+    TODO: overload this method and implement Watershed?
 
-    # radii = get_radii(nuclei, brightfield)
-    # logger.info('Calculated radii...')
-    # logger.debug(f'{radii=}')
-    # return radii
-    return example_radii
+    TODO: this method can be made to run in O(n log(n)) time by using trees (like KD trees).
+
+    Args:
+        nuclei: list of Nucleus objects to calculate the nuclei.
+
+    Returns: tuple of integers, each element being the radius of the respective nucleus in the input list.
+    """
+    centroids = np.array([nucleus.center for nucleus in nuclei])
+
+    distance = np.sqrt(((centroids[:, np.newaxis] - centroids) ** 2).sum(axis=2))
+    np.fill_diagonal(distance, np.inf)  # Replace self-distance with infinity
+
+    min_distances = np.min(distance, axis=1)
+
+    radii = min_distances / 2
+    radii = tuple(map(int, radii))
+
+    logger.info('Calculated radii...')
+    logger.debug(f'{radii=}')
+    return radii
 
 
-def create_cells(nuclei: list[Nucleus], radii: list[int]) -> list[Cell]:
+def create_cells(nuclei: list[Nucleus], radii: tuple[int]) -> list[Cell]:
     if not len(nuclei) == len(radii):
         raise ValueError('Cannot initialize Cell objects: Radii and nuclei have different lengths: '
                          f'({len(nuclei)=} | {len(radii)=}).')
 
     return [Cell(nucleus=nucleus, radius=radius) for nucleus, radius in zip(nuclei, radii)]
+
+
+def show_separated_stains(ihc_hdx: np.ndarray) -> None:
+    hematoxylin_channel = ihc_hdx[:, :, 0]
+    eosin_channel = ihc_hdx[:, :, 1]
+
+    fix, ax = plt.subplots(1, 3, figsize=(15, 5))
+    ax[0].imshow(rgb_from_hdx(ihc_hdx))
+    ax[0].set_title("Original")
+    ax[1].imshow(hematoxylin_channel, cmap='gray')
+    ax[1].set_title("Hematoxylin Channel")
+    ax[2].imshow(eosin_channel, cmap='gray')
+    ax[2].set_title("Eosin Channel")
+
+    for a in ax:
+        a.axis('off')
+
+    plt.tight_layout()
+    plt.show()
+
+
+def get_center_points(hematoxylin_channel: np.ndarray, display: bool = True) -> list[tuple]:
+    threshold = filters.threshold_otsu(hematoxylin_channel)
+    logger.debug(f'{threshold=}')
+    binary = hematoxylin_channel > threshold
+
+    cleaned = morphology.opening(binary, morphology.disk(3))
+    cleaned = morphology.closing(cleaned, morphology.disk(3))
+
+    labels = measure.label(cleaned)
+    props = measure.regionprops(labels)
+
+    centroids = [prop.centroid for prop in props]
+
+    # centroids are in y, x, not x, y.
+    centroids = [(centroid[1], centroid[0]) for centroid in centroids]
+
+    if display:
+        fix, ax = plt.subplots(figsize=(10, 6))
+        ax.imshow(hematoxylin_channel, cmap='gray')
+
+        for centroid in centroids:
+            ax.plot(centroid[0], centroid[1], 'r.')
+
+        ax.set_title('Calculated centroids')
+        ax.axis('off')
+        plt.show()
+
+    return centroids
