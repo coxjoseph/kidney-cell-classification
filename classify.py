@@ -18,7 +18,6 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument('--verbose', '-v', action='store_true', help='display debug output')
 
     parsed_args = parser.parse_args()
-    logger.debug(f'Received arguments: {parsed_args}')
     return parsed_args
 
 
@@ -27,6 +26,7 @@ if __name__ == '__main__':
 
     log_level = 10 if args.verbose else 20
     logging.basicConfig(level=log_level, format='%(asctime)s - $(levelname)s: %(message)s')
+    logger.debug(f'Received arguments: {args}')
 
     brightfield, codex = load_images(args)
 
