@@ -155,7 +155,7 @@ def extract_nuclei_coordinates(nuclei_mask: np.ndarray, downsample_factor=2, num
     pool = multiprocessing.Pool()
     results = []
     for process_ID in range(0, num_processes):
-        sublist = pool.apply_async(extract_nuclei_coordinates_parallel, (downsampled_mask, num_processes, process_ID))
+        sublist = pool.apply_async(extract_nuclei_coordinates_parallel, (downsampled_mask, num_processes, process_ID, downsample_factor))
         results.append(sublist)
     
     # Wait for processes to finish
@@ -165,9 +165,7 @@ def extract_nuclei_coordinates(nuclei_mask: np.ndarray, downsample_factor=2, num
     # Get the get the nuclei coordinate results
     nuclei_list = []
     for result in results:
-        nuclei_list.extend(result.get())
-        
-    # TODO: CONVERT BACK FROM DOWNSAMPLED COORDINATE SPACE TO REGULAR COORDINATE SPACE BEFORE RETURNING    
+        nuclei_list.extend(result.get())   
         
     nucleus_count = len(nuclei_list)
     print(f"Total nucleus count: {nucleus_count}", flush=True) # Flush to force immediate output 
@@ -176,7 +174,7 @@ def extract_nuclei_coordinates(nuclei_mask: np.ndarray, downsample_factor=2, num
 # Individual process implementation for extracting nuclei coordinates from a slice of the image
 # Image is sliced into groups of rows based on process ID
 # Boundary conditions will cause double counting of some nuclei along the slice edges
-def extract_nuclei_coordinates_parallel(nuclei_mask: np.ndarray, num_processes, process_ID, verbose=True)-> list[Nucleus]:
+def extract_nuclei_coordinates_parallel(nuclei_mask: np.ndarray, num_processes, process_ID, downsample_factor, verbose=True)-> list[Nucleus]:
     # Image is divided evenly along its rows for each process
     # Determines which block of rows this process operates on
     start_row = int((nuclei_mask.shape[0] / num_processes) * process_ID);
@@ -190,7 +188,7 @@ def extract_nuclei_coordinates_parallel(nuclei_mask: np.ndarray, num_processes, 
         for n in range(0, nuclei_mask.shape[1]):
             # If a pixel is hit, append it to the nuclei list and recursively 
             if nuclei_mask[m][n]:
-                nuc = Nucleus((m,n))
+                nuc = Nucleus((m*downsample_factor,n*downsample_factor))
                 nuclei_list.append(nuc)
                 cv2.floodFill(nuclei_mask, None, (n,m), 0)# Remove the found nucleus from the mask
                 count = count + 1
