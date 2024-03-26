@@ -1,10 +1,12 @@
 import matplotlib.pyplot as plt
 import numpy as np
+import cv2
+import multiprocessing
 from dataclasses import dataclass
 from typing import Union
 from logging import getLogger
 from skimage.filters import threshold_isodata
-from cv2 import floodFill
+from skimage import io, transform
 
 logger = getLogger()
 
@@ -83,13 +85,24 @@ class Cell:
         subset_indices = (DAPI_index, slice(left_x, right_x), slice(upper_y, lower_y))
         nuclei_mask = codex[subset_indices]
         
-        threshold = threshold_isodata(nuclei_mask) # Automatically obtain a threshold value
-        nuclei_mask = nuclei_mask > threshold # Binarizes the image
+        threshold_scaler = 1.1 # Manual adjustment factor for automatic threshold
+        threshold = threshold_isodata(nuclei_mask)*threshold_scaler # Automatically obtain a threshold value
+        nuclei_mask = (nuclei_mask > threshold).astype(np.uint8) # Binarizes the image
         
         if visual_output:
             plt.figure(figsize=(10, 8))
             plt.imshow(nuclei_mask, cmap='hot')
-            plt.title(f'Small Window Nuclei Mask')
+            plt.title(f'Small Window Nuclei Mask Before Erosion')
+            plt.colorbar()
+            plt.show()
+        
+        # Perform erosion to remove very small nuclei
+        nuclei_mask = erode(nuclei_mask, 2.5)
+        
+        if visual_output:
+            plt.figure(figsize=(10, 8))
+            plt.imshow(nuclei_mask, cmap='hot')
+            plt.title(f'Small Window Nuclei Mask After Erosion')
             plt.colorbar()
             plt.show()
         
@@ -123,6 +136,74 @@ class Cell:
         logger.debug(f'DEBUG: {features}')
         self.features = tuple(features)
 
+# Wrapper function for parallel nuclei coordinate extraction
+# CODEX is downsampled prior to reduce execution time
+# If a small input subimage is used, decrease the process count to minimize boundary artifacts (duplicate nuclei)
+# Visual output will show downsampled image
+def extract_nuclei_coordinates(nuclei_mask: np.ndarray, downsample_factor=2, num_processes=8, visual_output=False)-> list[Nucleus]:
+    scale_factor = 1/downsample_factor
+    downsampled_mask = cv2.resize(nuclei_mask, None, fx=scale_factor, fy=scale_factor, interpolation=cv2.INTER_AREA)
+    
+    if visual_output:
+        plt.figure(figsize=(10, 8))
+        plt.imshow(downsampled_mask, cmap='hot')
+        plt.title(f'Downsampled mask')
+        plt.colorbar()
+        plt.show()
+    
+    print('Beginning nuclei coordinate extraction...', flush=True) # Flush to force immediate output 
+    pool = multiprocessing.Pool()
+    results = []
+    for process_ID in range(0, num_processes):
+        sublist = pool.apply_async(extract_nuclei_coordinates_parallel, (downsampled_mask, num_processes, process_ID))
+        results.append(sublist)
+    
+    # Wait for processes to finish
+    pool.close()
+    pool.join()
+    
+    # Get the get the nuclei coordinate results
+    nuclei_list = []
+    for result in results:
+        nuclei_list.extend(result.get())
+        
+    # TODO: CONVERT BACK FROM DOWNSAMPLED COORDINATE SPACE TO REGULAR COORDINATE SPACE BEFORE RETURNING    
+        
+    nucleus_count = len(nuclei_list)
+    print(f"Total nucleus count: {nucleus_count}", flush=True) # Flush to force immediate output 
+    return nuclei_list
+    
+# Individual process implementation for extracting nuclei coordinates from a slice of the image
+# Image is sliced into groups of rows based on process ID
+# Boundary conditions will cause double counting of some nuclei along the slice edges
+def extract_nuclei_coordinates_parallel(nuclei_mask: np.ndarray, num_processes, process_ID, verbose=True)-> list[Nucleus]:
+    # Image is divided evenly along its rows for each process
+    # Determines which block of rows this process operates on
+    start_row = int((nuclei_mask.shape[0] / num_processes) * process_ID);
+    end_row = int(((nuclei_mask.shape[0] / num_processes)) * (process_ID+1));
+    
+    nuclei_list = []
+    count = 0
+   
+    # Scan through the image until a nuclei pixel is encountered
+    for m in range(start_row, end_row):
+        for n in range(0, nuclei_mask.shape[1]):
+            # If a pixel is hit, append it to the nuclei list and recursively 
+            if nuclei_mask[m][n]:
+                nuc = Nucleus((m,n))
+                nuclei_list.append(nuc)
+                cv2.floodFill(nuclei_mask, None, (n,m), 0)# Remove the found nucleus from the mask
+                count = count + 1
+                if (count % 500 == 0): # Periodic progress update
+                    print(f"Current nucleus count (within process {process_ID}): {count}", flush=True) # Flush to force immediate output 
+    return nuclei_list
+    
+def erode(nuclei_mask: np.ndarray, kern_radius) -> np.ndarray:
+    center = kern_radius
+    x, y = np.ogrid[:2*kern_radius, :2*kern_radius]
+    kernel = ((x - center) ** 2 + (y - center) ** 2 <= kern_radius ** 2).astype(np.uint8)
+    nuclei_mask = cv2.morphologyEx(nuclei_mask, cv2.MORPH_ERODE, kernel)
+    return nuclei_mask
 
 def segment_nuclei_brightfield(brightfield: np.ndarray) -> list[Nucleus]:
     # Example for now:
@@ -136,17 +217,21 @@ def segment_nuclei_brightfield(brightfield: np.ndarray) -> list[Nucleus]:
     # return [Nucleus(center=center) for center in centers]
     return example_nuclei
     
-def segment_nuclei_dapi(codex: np.ndarray, DAPI_index, visual_output=False) -> list[Nucleus]:
+def segment_nuclei_dapi(codex: np.ndarray, DAPI_index, visual_output=False) -> np.ndarray: # No return until nuclei extractor complete
     nuclei_mask = codex[DAPI_index]
     threshold = threshold_isodata(nuclei_mask) # Automatically obtain a threshold value
-    nuclei_mask = nuclei_mask > threshold # Binarizes the image
+    nuclei_mask = (nuclei_mask > threshold).astype(np.uint8) # Binarizes the image
+    nuclei_mask = erode(nuclei_mask, 2.5) # Erode the image to separate out joined nuclei
     
     if visual_output:
+        #downscaled_img = transform.rescale(nuclei_mask, 0.1, anti_aliasing=False) # Downscale the image to get rid of the gradient appearance
         plt.figure(figsize=(10, 8))
-        plt.imshow(nuclei_mask, cmap='hot')
+        plt.imshow(nuclei_mask, cmap='hot', interpolation=None)
         plt.title(f'DAPI Nuclei Mask')
         plt.colorbar()
         plt.show()
+        
+    #nuclei_list = extract_nuclei_coordinates(nuclei_mask)
     
     # TODO: create a method/methods that look at the brightfield array (should we switch to the codex image?) and
     #  create a list of center-points for nuclei. Once we have that uncomment below:
@@ -154,6 +239,7 @@ def segment_nuclei_dapi(codex: np.ndarray, DAPI_index, visual_output=False) -> l
     # centers = get_center_points(brightfield)
     # logger.info(f'Segmented {len(centers)} nuclei')
     # return [Nucleus(center=center) for center in centers]
+    
     return nuclei_mask
 
 
