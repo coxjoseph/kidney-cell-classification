@@ -36,7 +36,7 @@ if __name__ == '__main__':
     nuclei = [(5906, 7187)]; # Hardcoded nuclei value until nuclei extractor code is done
     radii = [15]; # Arbitrary for now
     cells = create_cells(nuclei, radii)
-    cells[0].get_cell_mask_irregular(codex, DAPI_index=0, cyto_index=1); # Cyto index is a placeholder, not currently used
+    cells[0].get_cell_mask_irregular(codex, DAPI_index=0, cyto_index=1, visual_output=True); # Cyto index is a placeholder, not currently used
     
     mask = segment_nuclei_dapi(codex, DAPI_index=0, visual_output=True)
     # END OF TESTING CODE

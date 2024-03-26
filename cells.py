@@ -75,7 +75,7 @@ class Cell:
         return [left_x, right_x, upper_y, lower_y]
         
     # TODO: FIND LAYER FOR CYTOPLASM (IF ANY)
-    def get_cell_mask_irregular(self, codex: np.ndarray, DAPI_index, cyto_index) -> np.ndarray:
+    def get_cell_mask_irregular(self, codex: np.ndarray, DAPI_index, cyto_index, visual_output=False) -> np.ndarray:
         # Get bounding box coordinates
         left_x, right_x, upper_y, lower_y = self.get_bounding_box(mask_size=256, codex_shape=codex.shape)
             
@@ -85,6 +85,13 @@ class Cell:
         
         threshold = threshold_isodata(nuclei_mask) # Automatically obtain a threshold value
         nuclei_mask = nuclei_mask > threshold # Binarizes the image
+        
+        if visual_output:
+            plt.figure(figsize=(10, 8))
+            plt.imshow(nuclei_mask, cmap='hot')
+            plt.title(f'Small Window Nuclei Mask')
+            plt.colorbar()
+            plt.show()
         
         # Threshold cytoplasm stain
         #cyto_mask = codex[cyto_index][left_x:right_x+1][upper_y:lower_y+1]
@@ -136,7 +143,7 @@ def segment_nuclei_dapi(codex: np.ndarray, DAPI_index, visual_output=False) -> l
     
     if visual_output:
         plt.figure(figsize=(10, 8))
-        plt.imshow(image_array[index, :, :], cmap='hot')
+        plt.imshow(nuclei_mask, cmap='hot')
         plt.title(f'DAPI Nuclei Mask')
         plt.colorbar()
         plt.show()
