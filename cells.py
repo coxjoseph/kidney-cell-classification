@@ -77,7 +77,7 @@ class Cell:
         return [left_x, right_x, upper_y, lower_y]
         
     # TODO: FIND LAYER FOR CYTOPLASM (IF ANY)
-    def get_cell_mask_irregular(self, codex: np.ndarray, DAPI_index, cyto_index, visual_output=False) -> np.ndarray:
+    def get_cell_mask_irregular(self, codex: np.ndarray, DAPI_index, cyto_index, opening_radius=2.5, visual_output=False) -> np.ndarray:
         # Get bounding box coordinates
         left_x, right_x, upper_y, lower_y = self.get_bounding_box(mask_size=256, codex_shape=codex.shape)
             
@@ -97,7 +97,8 @@ class Cell:
             plt.show()
         
         # Perform erosion to remove very small nuclei
-        nuclei_mask = erode(nuclei_mask, 2.5)
+        kernel = make_circular_kernel(opening_radius)
+        nuclei_mask = cv2.morphologyEx(nuclei_mask, cv2.MORPH_ERODE, kernel)
         
         if visual_output:
             plt.figure(figsize=(10, 8))
@@ -113,11 +114,9 @@ class Cell:
         # Merge (OR) the two stain matrices
         #mask = nuclei_mask + cyto_mask
         
-        # Perform closing to remove small holes in the cell mask
-        # TODO
         
         # Erase all neighboring, disconnected cells from the mask
-        # TODO
+        nuclei_mask = isolate_nuclei(nuclei_mask, opening_radius, visual_output)
         
         return nuclei_mask
         
@@ -188,7 +187,7 @@ def extract_nuclei_coordinates_parallel(nuclei_mask: np.ndarray, num_processes, 
         for n in range(0, nuclei_mask.shape[1]):
             # If a pixel is hit, append it to the nuclei list and recursively 
             if nuclei_mask[m][n]:
-                nuc = Nucleus((m*downsample_factor,n*downsample_factor))
+                nuc = Nucleus((m*downsample_factor + int(downsample_factor/2),n*downsample_factor + int(downsample_factor/2)))
                 nuclei_list.append(nuc)
                 cv2.floodFill(nuclei_mask, None, (n,m), 0)# Remove the found nucleus from the mask
                 count = count + 1
@@ -196,12 +195,11 @@ def extract_nuclei_coordinates_parallel(nuclei_mask: np.ndarray, num_processes, 
                     print(f"Current nucleus count (within process {process_ID}): {count}", flush=True) # Flush to force immediate output 
     return nuclei_list
     
-def erode(nuclei_mask: np.ndarray, kern_radius) -> np.ndarray:
+def make_circular_kernel(kern_radius) -> np.ndarray:
     center = kern_radius
     x, y = np.ogrid[:2*kern_radius, :2*kern_radius]
     kernel = ((x - center) ** 2 + (y - center) ** 2 <= kern_radius ** 2).astype(np.uint8)
-    nuclei_mask = cv2.morphologyEx(nuclei_mask, cv2.MORPH_ERODE, kernel)
-    return nuclei_mask
+    return kernel
 
 def segment_nuclei_brightfield(brightfield: np.ndarray) -> list[Nucleus]:
     # Example for now:
@@ -219,7 +217,8 @@ def segment_nuclei_dapi(codex: np.ndarray, DAPI_index, visual_output=False) -> n
     nuclei_mask = codex[DAPI_index]
     threshold = threshold_isodata(nuclei_mask) # Automatically obtain a threshold value
     nuclei_mask = (nuclei_mask > threshold).astype(np.uint8) # Binarizes the image
-    nuclei_mask = erode(nuclei_mask, 2.5) # Erode the image to separate out joined nuclei
+    kernel = make_circular_kernel(2.5)
+    nuclei_mask = cv2.morphologyEx(nuclei_mask, cv2.MORPH_ERODE, kernel)
     
     if visual_output:
         #downscaled_img = transform.rescale(nuclei_mask, 0.1, anti_aliasing=False) # Downscale the image to get rid of the gradient appearance
@@ -228,18 +227,29 @@ def segment_nuclei_dapi(codex: np.ndarray, DAPI_index, visual_output=False) -> n
         plt.title(f'DAPI Nuclei Mask')
         plt.colorbar()
         plt.show()
-        
-    #nuclei_list = extract_nuclei_coordinates(nuclei_mask)
-    
-    # TODO: create a method/methods that look at the brightfield array (should we switch to the codex image?) and
-    #  create a list of center-points for nuclei. Once we have that uncomment below:
-
-    # centers = get_center_points(brightfield)
-    # logger.info(f'Segmented {len(centers)} nuclei')
-    # return [Nucleus(center=center) for center in centers]
     
     return nuclei_mask
 
+# Mask out all nuclei not connected to the nuclei at the center of the window
+def isolate_nuclei(nuclei_window: np.ndarray, opening_radius, visual_output=False) -> np.ndarray:
+    isolated_window = nuclei_window.copy()
+    primary_nuclei_marker = 2 # Arbitrary value to separate the center nuclei from other nuclei visible in the window
+    center = int(nuclei_window.shape[0]/2)
+    cv2.floodFill(isolated_window, None, (center,center), primary_nuclei_marker) # Give all connected pixels the primary nuclei marker
+    isolated_window = (isolated_window == primary_nuclei_marker).astype(np.uint8)
+    
+    # Perform dilation to restore the nucleus to its pre-erosion size
+    kernel = make_circular_kernel(opening_radius)
+    isolated_window = cv2.morphologyEx(isolated_window, cv2.MORPH_DILATE, kernel)
+    
+    if visual_output:
+        plt.figure(figsize=(4, 4))
+        plt.imshow(isolated_window, cmap='hot')
+        plt.title(f'Isolated Nuclei')
+        plt.colorbar()
+        plt.show()
+    
+    return isolated_window
 
 def calculate_radii_from_nuclei(nuclei: list[Nucleus], brightfield: Union[np.ndarray, None] = None) -> list[int]:
     # Example for now:
