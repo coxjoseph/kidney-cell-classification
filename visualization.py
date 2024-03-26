@@ -1,5 +1,6 @@
 from os import PathLike
 from typing import Union
+from skimage import io, transform
 import numpy as np
 import matplotlib.pyplot as plt
 import tifffile
@@ -30,16 +31,16 @@ def display_channel_heatmaps(image_array: np.ndarray, channel_indices: list):
     """
     for index in channel_indices:
         plt.figure(figsize=(10, 8))
-        plt.imshow(image_array[:, :, index], cmap='hot')
+        plt.imshow(image_array[index, :, :], cmap='hot')
         plt.title(f'Channel {index} Heatmap')
         plt.colorbar()
         plt.show()
 
 
 if __name__ == '__main__':
-    file_path = 'data/codex.tif'
+    file_path = 'data/Section6_CODEX.tif'
     image_array = load_tiff_as_array(file_path)
 
     print(f'Image array is {"x".join(map(str, image_array.shape))}')
-    channel_indices = [0, 1, 2]
+    channel_indices = np.linspace(0,40,dtype=int)
     display_channel_heatmaps(image_array, channel_indices)
