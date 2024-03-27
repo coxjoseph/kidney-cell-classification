@@ -49,21 +49,19 @@ if __name__ == '__main__':
     use_debug_coordinates = True
     if (not use_debug_coordinates):
         print('Beginning nuclei mask generation...', flush=True)
-        nuclei_mask = segment_nuclei_dapi(codex, DAPI_index=0, visual_output=False)
+        nuclei_mask = segment_nuclei_dapi(codex, dapi_index=0, visual_output=False)
         nuclei_list = extract_nuclei_coordinates(nuclei_mask, downsample_factor=4, num_processes=8, visual_output=False)
-        nuclei_subsample = [nuclei_list[10000], nuclei_list[20000], nuclei_list[30000]]# Grab a small randomish sample of nuclei for testing
-        radii = [1, 1, 1] # Temporary values for debugging
-        cells = create_cells([nuclei_subsample[0].center, nuclei_subsample[1].center, nuclei_subsample[2].center], radii)
-        nuclei_mask = nuclei_mask = cells[0].get_cell_mask_irregular(codex, DAPI_index=0, cyto_index=1, visual_output=True) # Cyto index is a placeholder, not currently used
-        nuclei_mask = nuclei_mask = cells[1].get_cell_mask_irregular(codex, DAPI_index=0, cyto_index=1, visual_output=True) # Cyto index is a placeholder, not currently used
-        nuclei_mask = nuclei_mask = cells[2].get_cell_mask_irregular(codex, DAPI_index=0, cyto_index=1, visual_output=True) # Cyto index is a placeholder, not currently used
+        nuclei_subsample = [nuclei_list[10000], nuclei_list[20000], nuclei_list[30000]]  # Grab a small randomish sample of nuclei for testing
+        radii = [1, 1, 1]  # Temporary values for debugging
+        cells = create_cells(nuclei_subsample, radii)
+        nuclei_mask = cells[0].get_cell_mask_irregular(codex, DAPI_index=0, cyto_index=1, visual_output=True)  # Cyto index is a placeholder, not currently used
     else:
         nuclei_subsample = [(1718,5018),(1986,1410),(4062,3084)] # These coordinates were grabbed with a ds factor=4
         radii = [1, 1, 1] # Temporary values for debugging
         cells = create_cells(nuclei_subsample, radii)
-        nuclei_mask = nuclei_mask = cells[0].get_cell_mask_irregular(codex, DAPI_index=0, cyto_index=1, visual_output=True) # Cyto index is a placeholder, not currently used
-        nuclei_mask = nuclei_mask = cells[1].get_cell_mask_irregular(codex, DAPI_index=0, cyto_index=1, visual_output=True) # Cyto index is a placeholder, not currently used
-        nuclei_mask = nuclei_mask = cells[2].get_cell_mask_irregular(codex, DAPI_index=0, cyto_index=1, visual_output=True) # Cyto index is a placeholder, not currently used
+        nuclei_mask = nuclei_mask = cells[0].get_cell_mask_irregular(codex, DAPI_index=0, cyto_index=1, visual_output=True)  # Cyto index is a placeholder, not currently used
+        nuclei_mask = nuclei_mask = cells[1].get_cell_mask_irregular(codex, DAPI_index=0, cyto_index=1, visual_output=True)  # Cyto index is a placeholder, not currently used
+        nuclei_mask = nuclei_mask = cells[2].get_cell_mask_irregular(codex, DAPI_index=0, cyto_index=1, visual_output=True)  # Cyto index is a placeholder, not currently used
     
     # END OF TESTING CODE
     
