@@ -15,8 +15,8 @@ def load_images(args_: argparse.Namespace) -> tuple[np.ndarray, np.ndarray]:
     logger.debug(f'{codex_array.shape=} | {he_array.shape=}')
 
     target_shape = he_array.shape
-    codex_array = resize(codex_array, output_shape=(target_shape[0], target_shape[1]), order=1, mode='reflect',
-                         anti_aliasing=True)
+    #codex_array = resize(codex_array, output_shape=(target_shape[0], target_shape[1]), order=1, mode='reflect',
+    #                     anti_aliasing=True)
 
     logger.info('Successfully loaded and resized images')
     logger.debug(f'f{codex_array.shape=} | {he_array.shape}')
