@@ -50,7 +50,7 @@ class Cell:
         for i in range(output_array.shape[0]):
             output_array[i, ~mask] = 0
 
-        logger.debug(f'DEBUG: {output_array.shape=}')
+        logger.debug(f'{output_array.shape=}')
         logger.info('Channel-wise pixel values separated near nuclei...')
         return output_array
         
@@ -132,7 +132,7 @@ class Cell:
         features = []
         [features.extend(feature_extractor(pixel_values)) for feature_extractor in feature_extractors]
         logger.info('Created features...')
-        logger.debug(f'DEBUG: {features}')
+        logger.debug(f'{features}')
         self.features = tuple(features)
 
 # Wrapper function for parallel nuclei coordinate extraction
@@ -264,7 +264,7 @@ def calculate_radii_from_nuclei(nuclei: list[Nucleus], brightfield: Union[np.nda
 
     # radii = get_radii(nuclei, brightfield)
     # logger.info('Calculated radii...')
-    # logger.debug(f'DEBUG: {radii=}')
+    # logger.debug(f'{radii=}')
     # return radii
     return example_radii
 

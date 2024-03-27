@@ -27,13 +27,15 @@ def parse_arguments() -> argparse.Namespace:
     #parser.add_argument('--processcount', '-t', help='Number of CPU cores to run in parallel',
     #                    type=str, default='classified_stain.tif')
 
-    args_ = parser.parse_args()
-    logger.debug(f'Received arguments: {args_}')
-    return args_
+    parsed_args = parser.parse_args()
+    logger.debug(f'Received arguments: {parsed_args}')
+    return parsed_args
 
 
 if __name__ == '__main__':
     args = parse_arguments()
+    logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - $(levelname)s - %(message)s')
+    logging.basicConfig(level=logging.INFO, format='%(asctime)s - $(levelname)s - %(message)s')
 
     brightfield, codex = load_images(args)
     
@@ -74,4 +76,4 @@ if __name__ == '__main__':
     #[cell.calculate_features(feature_extractors, codex) for cell in cells]
     #cluster(cells)
 
-    #classified_image = generate_classified_image(brightfield, cells, args, save=True)
+    generate_classified_image(brightfield, cells, args, save=True)
