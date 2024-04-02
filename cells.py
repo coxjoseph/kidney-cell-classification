@@ -2,6 +2,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import cv2
 import multiprocessing
+from math import sqrt
 from dataclasses import dataclass
 from typing import Union
 from logging import getLogger
@@ -50,90 +51,75 @@ class Cell:
         for i in range(output_array.shape[0]):
             output_array[i, ~mask] = 0
 
-        logger.debug(f'{output_array.shape=}')
+        logger.debug(f'DEBUG: {output_array.shape=}')
         logger.info('Channel-wise pixel values separated near nuclei...')
         return output_array
-        
-    def get_bounding_box(self, mask_size, codex_shape) -> list[int]:        
-        # Determine a bounding box for the image
-        left_x = int(self.nucleus[0]-mask_size/2)
-        right_x = int(self.nucleus[0]+mask_size/2)
-        upper_y = int(self.nucleus[1]-mask_size/2)
-        lower_y = int(self.nucleus[1]+mask_size/2)
-        
-        # If the bounding box goes outside of the image, shift it such that it is inside of the image
-        if (left_x < 0):
-            right_x = right_x - left_x
-            left_x = 0
-        if (right_x >= codex_shape[1]):
-            left_x = left_x - (right_x - codex_shape[1]) - 1
-            right_x = codex_shape[1]-1
-        if (upper_y < 0):
-            lower_y = lower_y - upper_y
-            upper_y = 0
-        if (lower_y >= codex_shape[2]):
-            upper_y = upper_y - (lower_y - codex_shape[2]) - 1
-            lower_y = codex_shape[2]-1
-        return [left_x, right_x, upper_y, lower_y]
-        
-    # TODO: FIND LAYER FOR CYTOPLASM (IF ANY)
-    def get_cell_mask_irregular(self, codex: np.ndarray, DAPI_index, cyto_index, opening_radius=2.5, visual_output=False) -> np.ndarray:
-        # Get bounding box coordinates
-        left_x, right_x, upper_y, lower_y = self.get_bounding_box(mask_size=256, codex_shape=codex.shape)
-            
-        # Threshold nucleus stain
-        subset_indices = (DAPI_index, slice(left_x, right_x), slice(upper_y, lower_y))
-        nuclei_mask = codex[subset_indices]
-        
-        threshold_scaler = 1.1 # Manual adjustment factor for automatic threshold
-        threshold = threshold_isodata(nuclei_mask)*threshold_scaler # Automatically obtain a threshold value
-        nuclei_mask = (nuclei_mask > threshold).astype(np.uint8) # Binarizes the image
-        
-        if visual_output:
-            plt.figure(figsize=(10, 8))
-            plt.imshow(nuclei_mask, cmap='hot')
-            plt.title(f'Small Window Nuclei Mask Before Erosion')
-            plt.colorbar()
-            plt.show()
-        
-        # Perform erosion to remove very small nuclei
-        kernel = make_circular_kernel(opening_radius)
-        nuclei_mask = cv2.morphologyEx(nuclei_mask, cv2.MORPH_ERODE, kernel)
-        
-        if visual_output:
-            plt.figure(figsize=(10, 8))
-            plt.imshow(nuclei_mask, cmap='hot')
-            plt.title(f'Small Window Nuclei Mask After Erosion')
-            plt.colorbar()
-            plt.show()
-        
-        # Threshold cytoplasm stain
-        #cyto_mask = codex[cyto_index][left_x:right_x+1][upper_y:lower_y+1]
-        # TODO: BINARIZE
-        
-        # Merge (OR) the two stain matrices
-        #mask = nuclei_mask + cyto_mask
-        
-        
-        # Erase all neighboring, disconnected cells from the mask
-        nuclei_mask = isolate_nuclei(nuclei_mask, opening_radius, visual_output)
-        
-        return nuclei_mask
-        
-    # Get pixel values for irregular cell shape and nuclei
-    #def get_pixel_values_irregular(nuclei: list[Nucleus])
-
-    
-    #return mask
-    
 
     def calculate_features(self, feature_extractors: list[callable], codex: np.ndarray) -> None:
         pixel_values = self.get_pixel_values(codex)  # THESE WILL BE SQUARE ARRAYS
         features = []
         [features.extend(feature_extractor(pixel_values)) for feature_extractor in feature_extractors]
         logger.info('Created features...')
-        logger.debug(f'{features}')
+        logger.debug(f'DEBUG: {features}')
         self.features = tuple(features)
+        
+def get_bounding_box(nucleus_coordinates, mask_size, codex_shape) -> list[int]:        
+        # Determine a bounding box for the image
+        upper_m = int(nucleus_coordinates[0]-mask_size/2)
+        lower_m = int(nucleus_coordinates[0]+mask_size/2)
+        left_n = int(nucleus_coordinates[1]-mask_size/2)
+        right_n = int(nucleus_coordinates[1]+mask_size/2)
+
+        # If the bounding box goes outside of the image, shift it such that it is inside of the image
+        if (left_n < 0):
+            right_n = right_n - left_n
+            left_n = 0
+        if (right_n >= codex_shape[2]):
+            left_n = left_n - (right_n - codex_shape[2]) - 1
+            right_n = codex_shape[2]-1
+        if (upper_m < 0):
+            lower_m = lower_m - upper_m
+            upper_m = 0
+        if (lower_m >= codex_shape[1]):
+            upper_m = upper_m - (lower_m - codex_shape[1]) - 1
+            lower_m = codex_shape[1]-1
+        return [upper_m, lower_m, left_n, right_n]
+
+def get_nucleus_mask(nucleus_coordinates, codex: np.ndarray, DAPI_index, mask_size=256, opening_radius=2.5, isolated=True, visual_output=False) -> np.ndarray:
+    # Get bounding box coordinates
+    upper_m, lower_m, left_n, right_n = get_bounding_box(nucleus_coordinates, mask_size, codex_shape=codex.shape)
+        
+    # Threshold nucleus stain
+    subset_indices = (DAPI_index, slice(upper_m, lower_m), slice(left_n, right_n))
+    nuclei_mask = codex[subset_indices]
+    
+    threshold_scaler = 1.1 # Manual adjustment factor for automatic threshold
+    threshold = threshold_isodata(nuclei_mask)*threshold_scaler # Automatically obtain a threshold value
+    nuclei_mask = (nuclei_mask > threshold).astype(np.uint8) # Binarizes the image
+    
+    if visual_output:
+        plt.figure(figsize=(10, 8))
+        plt.imshow(nuclei_mask, cmap='hot')
+        plt.title(f'Small Window Nuclei Mask Before Erosion')
+        plt.colorbar()
+        plt.show()
+    
+    # Perform erosion to remove very small nuclei
+    kernel = make_circular_kernel(opening_radius)
+    nuclei_mask = cv2.morphologyEx(nuclei_mask, cv2.MORPH_ERODE, kernel)
+    
+    if visual_output:
+        plt.figure(figsize=(10, 8))
+        plt.imshow(nuclei_mask, cmap='hot')
+        plt.title(f'Small Window Nuclei Mask After Erosion')
+        plt.colorbar()
+        plt.show()
+    
+    # Erase all neighboring, disconnected nuclei from the mask
+    if isolated:
+        nuclei_mask = isolate_nuclei(nuclei_mask, opening_radius, visual_output)
+    
+    return nuclei_mask
 
 # Wrapper function for parallel nuclei coordinate extraction
 # CODEX is downsampled prior to reduce execution time
@@ -161,7 +147,7 @@ def extract_nuclei_coordinates(nuclei_mask: np.ndarray, downsample_factor=2, num
     pool.close()
     pool.join()
     
-    # Get the get the nuclei coordinate results
+    # Get the nuclei coordinate results
     nuclei_list = []
     for result in results:
         nuclei_list.extend(result.get())   
@@ -185,7 +171,7 @@ def extract_nuclei_coordinates_parallel(nuclei_mask: np.ndarray, num_processes, 
     # Scan through the image until a nuclei pixel is encountered
     for m in range(start_row, end_row):
         for n in range(0, nuclei_mask.shape[1]):
-            # If a pixel is hit, append it to the nuclei list and recursively 
+            # If a pixel is hit, append it to the nuclei list and set all connected pixels to zero
             if nuclei_mask[m][n]:
                 nuc = Nucleus((m*downsample_factor + int(downsample_factor/2),n*downsample_factor + int(downsample_factor/2)))
                 nuclei_list.append(nuc)
@@ -213,21 +199,21 @@ def segment_nuclei_brightfield(brightfield: np.ndarray) -> list[Nucleus]:
     # return [Nucleus(center=center) for center in centers]
     return example_nuclei
     
-def segment_nuclei_dapi(codex: np.ndarray, DAPI_index, visual_output=False) -> np.ndarray: # No return until nuclei extractor complete
+# Returns a binary mask of all nuclei from the CODEX
+def segment_nuclei_dapi(codex: np.ndarray, DAPI_index, erosion_radius=2.5, visual_output=False) -> np.ndarray:
     nuclei_mask = codex[DAPI_index]
     threshold = threshold_isodata(nuclei_mask) # Automatically obtain a threshold value
     nuclei_mask = (nuclei_mask > threshold).astype(np.uint8) # Binarizes the image
-    kernel = make_circular_kernel(2.5)
+    kernel = make_circular_kernel(erosion_radius)
     nuclei_mask = cv2.morphologyEx(nuclei_mask, cv2.MORPH_ERODE, kernel)
     
     if visual_output:
-        #downscaled_img = transform.rescale(nuclei_mask, 0.1, anti_aliasing=False) # Downscale the image to get rid of the gradient appearance
         plt.figure(figsize=(10, 8))
         plt.imshow(nuclei_mask, cmap='hot', interpolation=None)
         plt.title(f'DAPI Nuclei Mask')
         plt.colorbar()
         plt.show()
-    
+ 
     return nuclei_mask
 
 # Mask out all nuclei not connected to the nuclei at the center of the window
@@ -251,22 +237,18 @@ def isolate_nuclei(nuclei_window: np.ndarray, opening_radius, visual_output=Fals
     
     return isolated_window
 
-def calculate_radii_from_nuclei(nuclei: list[Nucleus], brightfield: Union[np.ndarray, None] = None) -> list[int]:
-    # Example for now:
-    example_radii = [1] * len(nuclei)
-
-    # TODO: look at the nuclei and, optionally, the brightfield image (again, maybe codex?) and creates a list of
-    #  radii for each nucleus. These lists should be linked to each other (best to make them as tuples to enforce
-    #  this? maybe a dictionary? seems overkill). This could be density based, or could be just a flat value that we
-    #  calculate based on the centers. I don't see a way to do this in less than O(n^2) time if we do something
-    #  fancy, but we could speedup with just selecting the half the minimum distance between centers I guess. Once
-    #  implemented uncomment below:
-
-    # radii = get_radii(nuclei, brightfield)
-    # logger.info('Calculated radii...')
-    # logger.debug(f'{radii=}')
-    # return radii
-    return example_radii
+def calculate_radii_from_nuclei(nuclei, codex: np.ndarray, DAPI_index, window_size=256) -> list[int]:
+    radii = []
+    print(f"Calculating radii from nuclei list...", flush=True) # Flush to force immediate output 
+    for nucleus in nuclei:
+        nucleus_mask = get_nucleus_mask(nucleus.center, codex, DAPI_index, mask_size=window_size, isolated=False)
+        _, labels = cv2.connectedComponents(nucleus_mask.astype(np.uint8))
+        num_nearby_nuclei = np.max(labels)
+        average_cell_area = (window_size*window_size)/num_nearby_nuclei
+        radius = sqrt(average_cell_area/3.14)
+        radii.append(radius)
+        
+    return radii
 
 
 def create_cells(nuclei: list[Nucleus], radii: list[int]) -> list[Cell]:
@@ -276,3 +258,8 @@ def create_cells(nuclei: list[Nucleus], radii: list[int]) -> list[Cell]:
 
     return [Cell(nucleus=nucleus, radius=radius) for nucleus, radius in zip(nuclei, radii)]
 
+def create_nuclei(nuclei_coordinates) -> list[Nucleus]:
+    nuclei = []
+    for nuc in nuclei_coordinates:
+        nuclei.append(Nucleus(center=nuc))
+    return nuclei
