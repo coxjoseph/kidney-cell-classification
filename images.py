@@ -23,7 +23,10 @@ def load_images(args_: argparse.Namespace) -> tuple[np.ndarray, np.ndarray]:
     return he_array, codex_array
 
 
-def generate_classified_image(brightfield: np.ndarray, cells: list[Cell], args: argparse.Namespace, save: bool = True):
+def generate_classified_image(brightfield: np.ndarray,
+                              cells: list[Cell],
+                              args: argparse.Namespace,
+                              save: bool = True) -> None:
     centers = []
     labels = []
 

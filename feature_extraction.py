@@ -11,11 +11,11 @@ def generate_feature_extractors() -> list[callable]:
     #   pixel_values. This matrix will contain all channels in the codex. It should output an iterable, as the outputs
     #   will be unwrapped with .extend()
     methods = [_example_feature_extractor]
-    logger.debug(f'DEBUG: feature extraction methods: {methods}')
+    logger.debug(f'feature extraction methods: {methods}')
     return methods
 
 
-def _example_feature_extractor(pixel_values: np.ndarray):
+def _example_feature_extractor(pixel_values: np.ndarray) -> np.ndarray:
     """
     Example feature extractor, which implements the channel-wise mean of the pixel values.
     Args:
