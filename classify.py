@@ -6,6 +6,7 @@ from cells import segment_nuclei_brightfield, segment_nuclei_dapi, calculate_rad
 from skimage import io, transform
 from feature_extraction import generate_feature_extractors
 from clustering import cluster
+from feature_extraction import get_nuclei_size
 
 
 logger = logging.getLogger()
@@ -64,6 +65,7 @@ if __name__ == '__main__':
         nuclei_mask = nuclei_mask = cells[0].get_cell_mask_irregular(codex, DAPI_index=0, cyto_index=1, visual_output=True) # Cyto index is a placeholder, not currently used
         nuclei_mask = nuclei_mask = cells[1].get_cell_mask_irregular(codex, DAPI_index=0, cyto_index=1, visual_output=True) # Cyto index is a placeholder, not currently used
         nuclei_mask = nuclei_mask = cells[2].get_cell_mask_irregular(codex, DAPI_index=0, cyto_index=1, visual_output=True) # Cyto index is a placeholder, not currently used
+        print('Nuclei Size: ', get_nuclei_size(nuclei_mask))
     
     # END OF TESTING CODE
     
@@ -76,4 +78,4 @@ if __name__ == '__main__':
     #[cell.calculate_features(feature_extractors, codex) for cell in cells]
     #cluster(cells)
 
-    generate_classified_image(brightfield, cells, args, save=True)
+    #generate_classified_image(brightfield, cells, args, save=True)
