@@ -5,8 +5,14 @@ import numpy as np
 from skimage.transform import resize
 from cells import Cell
 import matplotlib.pyplot as plt
+from functools import partial
 
 logger = getLogger()
+
+
+def mapping_function(*args, **kwargs) -> callable:
+    # ToDo: write an accurate mapping function from bf to codex.
+    return partial(resize,  *args, **kwargs)
 
 
 def load_images(args_: argparse.Namespace) -> tuple[np.ndarray, np.ndarray]:
@@ -15,8 +21,8 @@ def load_images(args_: argparse.Namespace) -> tuple[np.ndarray, np.ndarray]:
     logger.debug(f'{codex_array.shape=} | {he_array.shape=}')
 
     target_shape = he_array.shape
-    #codex_array = resize(codex_array, output_shape=(target_shape[0], target_shape[1]), order=1, mode='reflect',
-    #                     anti_aliasing=True)
+    mapper = mapping_function(output_shape=(target_shape[0], target_shape[1]), order=1, mode='reflect', anti_aliasing=True)
+    he_array = mapper(codex_array)
 
     logger.info('Successfully loaded and resized images')
     logger.debug(f'f{codex_array.shape=} | {he_array.shape}')
@@ -44,7 +50,6 @@ def generate_classified_image(brightfield: np.ndarray,
                          f'Implement more colors or change the clustering parameters to output fewer labels')
 
     plt.figure()
-    # TODO: can we just do this with the bf image? unsure.
     plt.imshow(brightfield)
     for point, label in zip(centers, labels):
         x, y = point
