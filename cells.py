@@ -193,19 +193,13 @@ def make_circular_kernel(kern_radius) -> np.ndarray:
 
 
 def segment_nuclei_brightfield(brightfield: np.ndarray) -> list[Nucleus]:
-    # Example for now:
     example_nuclei = [Nucleus(center=(x, y)) for x, y in zip(range(5), range(5))]
     logger.info(f'Segmented {len(example_nuclei)} nuclei')
     # TODO: create a method/methods that look at the brightfield array (should we switch to the codex image?) and
     #  create a list of center-points for nuclei. Once we have that uncomment below:
-
-    # centers = get_center_points(brightfield)
-    # logger.info(f'Segmented {len(centers)} nuclei')
-    # return [Nucleus(center=center) for center in centers]
     return example_nuclei
 
 
-# Returns a binary mask of all nuclei from the CODEX
 def segment_nuclei_dapi(codex: np.ndarray, dapi_index: int, erosion_radius: int = 2.5, visual_output: bool = False) \
         -> np.ndarray:
     nuclei_mask = codex[dapi_index]
@@ -232,7 +226,6 @@ def isolate_nuclei(nuclei_window: np.ndarray, opening_radius, visual_output=Fals
                   primary_nuclei_marker)  # Give all connected pixels the primary nuclei marker
     isolated_window = (isolated_window == primary_nuclei_marker).astype(np.uint8)
 
-    # Perform dilation to restore the nucleus to its pre-erosion size
     kernel = make_circular_kernel(opening_radius)
     isolated_window = cv2.morphologyEx(isolated_window, cv2.MORPH_DILATE, kernel)
 
@@ -248,7 +241,7 @@ def isolate_nuclei(nuclei_window: np.ndarray, opening_radius, visual_output=Fals
 
 def calculate_radii_from_nuclei(nuclei, codex: np.ndarray, dapi_index: int, window_size=256) -> list[float]:
     radii = []
-    logger.info('Calculating radii from nuclei list...')  # Flush to force immediate output
+    logger.info('Calculating radii from nuclei list...')
     for nucleus in nuclei:
         nucleus_mask = get_nucleus_mask(nucleus.center, codex, dapi_index, mask_size=window_size, isolated=False)
         _, labels = cv2.connectedComponents(nucleus_mask.astype(np.uint8))
