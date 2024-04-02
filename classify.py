@@ -7,6 +7,7 @@ from visualization import overlay_cell_boundaries
 from skimage import io, transform
 from feature_extraction import generate_feature_extractors
 from clustering import cluster
+from feature_extraction import get_nuclei_size
 
 logger = logging.getLogger()
 
@@ -32,8 +33,10 @@ if __name__ == '__main__':
     brightfield, codex = load_images(args)
     
     # START OF TESTING CODE
+
     # nuclei_subsample = [(1718,5018),(1986,1410),(4062,3084)] # These coordinates were grabbed in a prior run
     # nuclei_mask = get_nucleus_mask(nuclei_subsample[2], codex, DAPI_index=args.dapi, visual_output=True)
+
     # END OF TESTING CODE
     
     nuclei_mask = segment_nuclei_dapi(codex, DAPI_index=args.dapi)
@@ -44,5 +47,6 @@ if __name__ == '__main__':
     #feature_extractors = generate_feature_extractors()
     #[cell.calculate_features(feature_extractors, codex) for cell in cells]
     #cluster(cells)
+
 
     #classified_image = generate_classified_image(brightfield, cells, args, save=True)
