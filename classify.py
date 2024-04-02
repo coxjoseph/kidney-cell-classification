@@ -32,15 +32,8 @@ if __name__ == '__main__':
     brightfield, codex = load_images(args)
     
     # START OF TESTING CODE
-    #    nuclei_subsample = [(1718,5018),(1986,1410),(4062,3084)] # These coordinates were grabbed in a prior run
-    #    nuclei_mask = get_nucleus_mask(nuclei_subsample[2], codex, DAPI_index=args.dapi, visual_output=True)
-    #    for codex_index in range(0, 40):
-    #        show_codex_window(cells[2], codex_index, codex)
-    
-    #nuclei_subsample = [nuclei_list[10000], nuclei_list[20000], nuclei_list[30000]]# Grab a small randomish sample of nuclei for testing
-    #nuclei_subsample = [(1718,5018),(1986,1410),(4062,3084)] # These coordinates were grabbed in a prior run
-    #nuclei_mask = get_nucleus_mask(nuclei_subsample[1], codex, DAPI_index=args.dapi, isolated=False, visual_output=False)
-    #overlay_cell_boundaries(nuclei_mask, 18)
+    # nuclei_subsample = [(1718,5018),(1986,1410),(4062,3084)] # These coordinates were grabbed in a prior run
+    # nuclei_mask = get_nucleus_mask(nuclei_subsample[2], codex, DAPI_index=args.dapi, visual_output=True)
     # END OF TESTING CODE
     
     nuclei_mask = segment_nuclei_dapi(codex, DAPI_index=args.dapi)
