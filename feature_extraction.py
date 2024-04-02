@@ -33,7 +33,7 @@ def generate_feature_extractors() -> list[callable]:
                _max_intensity,
                _min_intensity]
 
-    logger.debug(f'feature extraction methods: {methods}')
+    logger.debug(f'Feature extraction methods: {methods}')
     return methods
 
 
