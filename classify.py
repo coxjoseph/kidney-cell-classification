@@ -18,13 +18,8 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument('--he', required=True, help='Path to H&E stained tiff file', type=str)
     parser.add_argument('--output', '-o', help='output tiff file (default to ./classified_stain.tif)',
                         type=str, default='classified_stain.tif')
-    
-    # TODO: FINISH THESE
-    #parser.add_argument('--dapi', '-d', help='DAPI layer of CODEX file (default to 0)',
-    #                    type=str, default='0')
-    #parser.add_argument('--cyto', '-d', help='Cytoplasm layer of CODEX file (default to ./classified_stain.tif)',
-    #                    type=str, default='classified_stain.tif')
-    #parser.add_argument('--processcount', '-t', help='Number of CPU cores to run in parallel', type=str, default='8')
+    parser.add_argument('--dapi', '-d', help='DAPI layer of CODEX file (default to 0)', type=int, default='0')
+    parser.add_argument('--njobs', '-j', help='Number of CPU cores to run in parallel', type=int, default='8')
 
     args_ = parser.parse_args()
     logger.debug(f'Received arguments: {args_}')
@@ -35,28 +30,23 @@ if __name__ == '__main__':
     args = parse_arguments()
 
     brightfield, codex = load_images(args)
-    DAPI_index = 0 # Remove once arg parser is done
     
     # START OF TESTING CODE
     #    nuclei_subsample = [(1718,5018),(1986,1410),(4062,3084)] # These coordinates were grabbed in a prior run
-    #    nuclei_mask = get_nucleus_mask(nuclei_subsample[2], codex, DAPI_index=0, visual_output=True)
+    #    nuclei_mask = get_nucleus_mask(nuclei_subsample[2], codex, DAPI_index=args.dapi, visual_output=True)
     #    for codex_index in range(0, 40):
     #        show_codex_window(cells[2], codex_index, codex)
     
     #nuclei_subsample = [nuclei_list[10000], nuclei_list[20000], nuclei_list[30000]]# Grab a small randomish sample of nuclei for testing
     #nuclei_subsample = [(1718,5018),(1986,1410),(4062,3084)] # These coordinates were grabbed in a prior run
-    #nuclei_mask = get_nucleus_mask(nuclei_subsample[1], codex, DAPI_index=0, isolated=False, visual_output=False)
+    #nuclei_mask = get_nucleus_mask(nuclei_subsample[1], codex, DAPI_index=args.dapi, isolated=False, visual_output=False)
     #overlay_cell_boundaries(nuclei_mask, 18)
     # END OF TESTING CODE
     
-    nuclei_mask = segment_nuclei_dapi(codex, DAPI_index=DAPI_index)
-    nuclei = extract_nuclei_coordinates(nuclei_mask, downsample_factor=4, num_processes=8, visual_output=False)
-    radii = calculate_radii_from_nuclei(nuclei, codex, DAPI_index=DAPI_index, window_size=128)
+    nuclei_mask = segment_nuclei_dapi(codex, DAPI_index=args.dapi)
+    nuclei = extract_nuclei_coordinates(nuclei_mask, downsample_factor=4, num_processes=args.njobs, visual_output=False)
+    radii = calculate_radii_from_nuclei(nuclei, codex, DAPI_index=args.dapi, window_size=128)
     cells = create_cells(nuclei, radii)
-    
-    sample_mask = get_nucleus_mask(nuclei[15000].center, codex, DAPI_index=0, isolated=False)
-    sample_radius = radii[15000]
-    overlay_cell_boundaries(sample_mask, sample_radius)
 
     #feature_extractors = generate_feature_extractors()
     #[cell.calculate_features(feature_extractors, codex) for cell in cells]
