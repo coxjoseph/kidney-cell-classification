@@ -1,7 +1,7 @@
 import matplotlib.pyplot as plt
 import numpy as np
 import cv2
-import multiprocessing
+import threading
 from math import sqrt
 from dataclasses import dataclass
 from typing import Union
@@ -32,7 +32,7 @@ class Cell:
         start_x, end_x = max(center_x + r, 0), min(center_x + r, codex.shape[0])
         start_y, end_y = max(center_y - r, 0), min(center_y + r, codex.shape[1])
 
-        output_array = np.zeros(2 * r, 2 * r, codex.shape[2])
+        output_array = np.zeros((2 * r, 2 * r, codex.shape[2]))
 
         # TODO: will this error if nucleus is too close to edge? unsure.
         x, y = np.ogrid[-r:r, -r:r]
@@ -71,17 +71,17 @@ def get_bounding_box(nucleus_coordinates, mask_size, codex_shape) -> list[int]:
     left_n = int(nucleus_coordinates[1] - mask_size / 2)
     right_n = int(nucleus_coordinates[1] + mask_size / 2)
 
-    # If the bounding box goes outside of the image, shift it such that it is inside of the image
-    if (left_n < 0):
+    # If the bounding box goes outside the image, shift it such that it is inside the image
+    if left_n < 0:
         right_n = right_n - left_n
         left_n = 0
-    if (right_n >= codex_shape[2]):
+    if right_n >= codex_shape[2]:
         left_n = left_n - (right_n - codex_shape[2]) - 1
         right_n = codex_shape[2] - 1
-    if (upper_m < 0):
+    if upper_m < 0:
         lower_m = lower_m - upper_m
         upper_m = 0
-    if (lower_m >= codex_shape[1]):
+    if lower_m >= codex_shape[1]:
         upper_m = upper_m - (lower_m - codex_shape[1]) - 1
         lower_m = codex_shape[1] - 1
     return [upper_m, lower_m, left_n, right_n]
@@ -125,14 +125,36 @@ def get_nucleus_mask(nucleus_coordinates, codex: np.ndarray, DAPI_index, mask_si
     return nuclei_mask
 
 
-# Wrapper function for parallel nuclei coordinate extraction
-# CODEX is downsampled prior to reduce execution time
-# If a small input subimage is used, decrease the process count to minimize boundary artifacts (duplicate nuclei)
-# Visual output will show downsampled image
-def extract_nuclei_coordinates(nuclei_mask: np.ndarray, downsample_factor=2, num_processes=8, visual_output=False) -> \
-list[Nucleus]:
+def process_subset(image: np.ndarray, nuclei_mask: np.ndarray, downsample_factor: int) -> list[Nucleus]:
+    thread = threading.current_thread()
+    nuclei_list = []
+
+    for m in range(image.shape[0]):
+        for n in range(0, nuclei_mask.shape[1]):
+            if nuclei_mask[m][n]:
+                nuc = Nucleus((m * downsample_factor + downsample_factor // 2,
+                               n * downsample_factor + downsample_factor // 2))
+                nuclei_list.append(nuc)
+
+                cv2.floodFill(nuclei_mask, None, (n, m), 0)  # Works?
+                if len(nuclei_list) % 500 == 0:
+                    logger.debug(f'Thread {thread}: Current nucleus count {len(nuclei_list)}')
+    return nuclei_list
+
+
+def extract_nuclei_coordinates(nuclei_mask: np.ndarray,
+                               downsample_factor: int = 2,
+                               num_threads: int = 8, visual_output: bool = False) -> list[Nucleus]:
+    def process_image(image_subset: np.ndarray, result_list: list, thread_lock: threading.Lock):
+        nuc_list = process_subset(image_subset, nuclei_mask, downsample_factor)
+        with thread_lock:
+            result_list.extend(nuc_list)
+
     scale_factor = 1 / downsample_factor
-    downsampled_mask = cv2.resize(nuclei_mask, None, fx=scale_factor, fy=scale_factor, interpolation=cv2.INTER_AREA)
+    downsampled_mask = cv2.resize(nuclei_mask, None,
+                                  fx=scale_factor,
+                                  fy=scale_factor,
+                                  interpolation=cv2.INTER_AREA)
 
     if visual_output:
         plt.figure(figsize=(10, 8))
@@ -141,55 +163,26 @@ list[Nucleus]:
         plt.colorbar()
         plt.show()
 
-    print('Beginning nuclei coordinate extraction...', flush=True)  # Flush to force immediate output
-    pool = multiprocessing.Pool()
+    logger.info('Beginning nuclei coordinate extraction...')
+
+    height, width = nuclei_mask.shape[:2]
+    part_height = height // num_threads
+    image_parts = [(nuclei_mask[i * part_height:(i + 1) * part_height],) for i in range(num_threads)]
+
     results = []
-    for process_ID in range(0, num_processes):
-        sublist = pool.apply_async(extract_nuclei_coordinates_parallel,
-                                   (downsampled_mask, num_processes, process_ID, downsample_factor))
-        results.append(sublist)
+    lock = threading.Lock()
 
-    # Wait for processes to finish
-    pool.close()
-    pool.join()
+    threads = []
+    for image_part in image_parts:
+        thread = threading.Thread(target=process_image, args=(image_part, results, lock))
+        threads.append(thread)
+        thread.start()
 
-    # Get the nuclei coordinate results
-    nuclei_list = []
-    for result in results:
-        nuclei_list.extend(result.get())
+    for thread in threads:
+        thread.join()
 
-    nucleus_count = len(nuclei_list)
-    print(f"Total nucleus count: {nucleus_count}", flush=True)  # Flush to force immediate output
-    return nuclei_list
-
-
-# Individual process implementation for extracting nuclei coordinates from a slice of the image
-# Image is sliced into groups of rows based on process ID
-# Boundary conditions will cause double counting of some nuclei along the slice edges
-def extract_nuclei_coordinates_parallel(nuclei_mask: np.ndarray, num_processes, process_ID, downsample_factor,
-                                        verbose=True) -> list[Nucleus]:
-    # Image is divided evenly along its rows for each process
-    # Determines which block of rows this process operates on
-    start_row = int((nuclei_mask.shape[0] / num_processes) * process_ID);
-    end_row = int(((nuclei_mask.shape[0] / num_processes)) * (process_ID + 1));
-
-    nuclei_list = []
-    count = 0
-
-    # Scan through the image until a nuclei pixel is encountered
-    for m in range(start_row, end_row):
-        for n in range(0, nuclei_mask.shape[1]):
-            # If a pixel is hit, append it to the nuclei list and set all connected pixels to zero
-            if nuclei_mask[m][n]:
-                nuc = Nucleus((m * downsample_factor + int(downsample_factor / 2),
-                               n * downsample_factor + int(downsample_factor / 2)))
-                nuclei_list.append(nuc)
-                cv2.floodFill(nuclei_mask, None, (n, m), 0)  # Remove the found nucleus from the mask
-                count = count + 1
-                if (count % 500 == 0):  # Periodic progress update
-                    print(f"Current nucleus count (within process {process_ID}): {count}",
-                          flush=True)  # Flush to force immediate output
-    return nuclei_list
+    logger.info(f'Nuclei coordinates extracted: found {len(results)} nuclei.')
+    return results
 
 
 def make_circular_kernel(kern_radius) -> np.ndarray:
@@ -231,7 +224,6 @@ def segment_nuclei_dapi(codex: np.ndarray, dapi_index: int, erosion_radius: int 
     return nuclei_mask
 
 
-# Mask out all nuclei not connected to the nuclei at the center of the window
 def isolate_nuclei(nuclei_window: np.ndarray, opening_radius, visual_output=False) -> np.ndarray:
     isolated_window = nuclei_window.copy()
     primary_nuclei_marker = 2  # Arbitrary value to separate the center nuclei from other nuclei visible in the window
@@ -254,21 +246,20 @@ def isolate_nuclei(nuclei_window: np.ndarray, opening_radius, visual_output=Fals
     return isolated_window
 
 
-def calculate_radii_from_nuclei(nuclei, codex: np.ndarray, DAPI_index, window_size=256) -> list[int]:
+def calculate_radii_from_nuclei(nuclei, codex: np.ndarray, dapi_index: int, window_size=256) -> list[float]:
     radii = []
-    print(f"Calculating radii from nuclei list...", flush=True)  # Flush to force immediate output
+    logger.info('Calculating radii from nuclei list...')  # Flush to force immediate output
     for nucleus in nuclei:
-        nucleus_mask = get_nucleus_mask(nucleus.center, codex, DAPI_index, mask_size=window_size, isolated=False)
+        nucleus_mask = get_nucleus_mask(nucleus.center, codex, dapi_index, mask_size=window_size, isolated=False)
         _, labels = cv2.connectedComponents(nucleus_mask.astype(np.uint8))
         num_nearby_nuclei = np.max(labels)
         average_cell_area = (window_size * window_size) / num_nearby_nuclei
         radius = sqrt(average_cell_area / 3.14)
         radii.append(radius)
-
     return radii
 
 
-def create_cells(nuclei: list[Nucleus], radii: list[int]) -> list[Cell]:
+def create_cells(nuclei: list[Nucleus], radii: list[float]) -> list[Cell]:
     if not len(nuclei) == len(radii):
         raise ValueError('Cannot initialize Cell objects: Radii and nuclei have different lengths: '
                          f'({len(nuclei)=} | {len(radii)=}).')
