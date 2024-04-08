@@ -1,32 +1,54 @@
 import argparse
+from typing import Optional
+
 import tifffile
 from logging import getLogger
 import numpy as np
 from skimage.transform import resize
 from cells import Cell
 import matplotlib.pyplot as plt
+import cv2
 from functools import partial
 
 logger = getLogger()
 
 
+def downscale(image: np.ndarray, scaling_factor: Optional[int] = 3):
+    if scaling_factor is None:
+        scaling_factor = 3
+    width = image.shape[0] // scaling_factor
+    height = image.shape[1] // scaling_factor
+
+    dim = (width, height)
+
+    resized = cv2.resize(image, dim, interpolation=cv2.INTER_AREA)
+    return resized
+
+
 def mapping_function(*args, **kwargs) -> callable:
-    # ToDo: write an accurate mapping function from bf to codex.
     return partial(resize,  *args, **kwargs)
 
 
 def load_images(args_: argparse.Namespace) -> tuple[np.ndarray, np.ndarray]:
     codex_array, he_array = tifffile.TiffFile(args_.codex).asarray(), tifffile.TiffFile(args_.he).asarray()
+    # TODO: make a way we can choose whether to do this... and specify which dimensions to do it to
+    codex_array = np.transpose(codex_array)
 
     logger.debug(f'{codex_array.shape=} | {he_array.shape=}')
+    logger.debug(f'{codex_array.dtype=} | {he_array.dtype=}')
 
-    target_shape = he_array.shape
-    mapper = mapping_function(output_shape=(target_shape[0], target_shape[1]), order=1, mode='reflect', anti_aliasing=True)
-    he_array = mapper(codex_array)
+    downsampled_codex = downscale(codex_array, scaling_factor=args_.scaling_factor)
+    downsampled_he = downscale(he_array, scaling_factor=args_.scaling_factor)
+    del codex_array
+    del he_array
+    target_shape = downsampled_codex.shape
+
+    mapper = mapping_function(output_shape=(target_shape[0], target_shape[1]), anti_aliasing=False)
+    downsampled_he = mapper(downsampled_he)
 
     logger.info('Successfully loaded and resized images')
-    logger.debug(f'f{codex_array.shape=} | {he_array.shape}')
-    return he_array, codex_array
+    logger.debug(f'{downsampled_codex.shape=} | {downsampled_he.shape=}')
+    return downsampled_codex, downsampled_he
 
 
 def generate_classified_image(brightfield: np.ndarray,

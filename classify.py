@@ -17,6 +17,7 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument('--dapi', '-d', help='DAPI layer of CODEX file (default to 0)', type=int, default='0')
     parser.add_argument('--threads', '-t', help='Number of CPU cores to run in parallel', type=int, default='8')
     parser.add_argument('--verbose', '-v', help='Print debug output', action='store_true')
+    parser.add_argument('--scaling_factor', '-s', help='Scaling factor for down-sampling (default to 3)', default=3, type=int)
 
     args_ = parser.parse_args()
     return args_

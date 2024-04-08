@@ -87,13 +87,13 @@ def get_bounding_box(nucleus_coordinates, mask_size, codex_shape) -> list[int]:
     return [upper_m, lower_m, left_n, right_n]
 
 
-def get_nucleus_mask(nucleus_coordinates, codex: np.ndarray, DAPI_index, mask_size=256, opening_radius=2.5,
+def get_nucleus_mask(nucleus_coordinates, codex: np.ndarray, dapi_index, mask_size=256, opening_radius=2.5,
                      isolated=True, visual_output=False) -> np.ndarray:
     # Get bounding box coordinates
     upper_m, lower_m, left_n, right_n = get_bounding_box(nucleus_coordinates, mask_size, codex_shape=codex.shape)
 
     # Threshold nucleus stain
-    subset_indices = (DAPI_index, slice(upper_m, lower_m), slice(left_n, right_n))
+    subset_indices = (dapi_index, slice(upper_m, lower_m), slice(left_n, right_n))
     nuclei_mask = codex[subset_indices]
 
     threshold_scaler = 1.1  # Manual adjustment factor for automatic threshold
@@ -142,13 +142,18 @@ def process_subset(image: np.ndarray, nuclei_mask: np.ndarray, downsample_factor
     return nuclei_list
 
 
+def process_image(image_subset: np.ndarray, nuclei_mask: np.ndarray, result_list: list,
+                  thread_lock: threading.Lock,
+                  downsample_factor: int = None):
+    logger.debug(f'{image_subset.shape = }')
+    nuc_list = process_subset(image_subset, nuclei_mask, downsample_factor)
+    with thread_lock:
+        result_list.extend(nuc_list)
+
+
 def extract_nuclei_coordinates(nuclei_mask: np.ndarray,
                                downsample_factor: int = 2,
                                num_threads: int = 8, visual_output: bool = False) -> list[Nucleus]:
-    def process_image(image_subset: np.ndarray, result_list: list, thread_lock: threading.Lock):
-        nuc_list = process_subset(image_subset, nuclei_mask, downsample_factor)
-        with thread_lock:
-            result_list.extend(nuc_list)
 
     scale_factor = 1 / downsample_factor
     downsampled_mask = cv2.resize(nuclei_mask, None,
@@ -167,14 +172,20 @@ def extract_nuclei_coordinates(nuclei_mask: np.ndarray,
 
     height, width = nuclei_mask.shape[:2]
     part_height = height // num_threads
-    image_parts = [(nuclei_mask[i * part_height:(i + 1) * part_height],) for i in range(num_threads)]
+    image_parts = [nuclei_mask[i * part_height:(i + 1) * part_height, :] for i in range(num_threads)]
 
     results = []
     lock = threading.Lock()
 
     threads = []
     for image_part in image_parts:
-        thread = threading.Thread(target=process_image, args=(image_part, results, lock))
+        thread = threading.Thread(target=process_image, kwargs={
+            'image_subset': image_part,
+            'nuclei_mask': nuclei_mask,
+            'result_list': results,
+            'thread_lock': lock,
+            'downsample_factor': 1
+        })
         threads.append(thread)
         thread.start()
 
@@ -202,7 +213,7 @@ def segment_nuclei_brightfield(brightfield: np.ndarray) -> list[Nucleus]:
 
 def segment_nuclei_dapi(codex: np.ndarray, dapi_index: int, erosion_radius: int = 2.5, visual_output: bool = False) \
         -> np.ndarray:
-    nuclei_mask = codex[dapi_index]
+    nuclei_mask = codex[:, :, dapi_index]
     threshold = threshold_isodata(nuclei_mask)
     nuclei_mask = (nuclei_mask > threshold).astype(np.uint8)
     kernel = make_circular_kernel(erosion_radius)
