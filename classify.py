@@ -3,7 +3,7 @@ import logging
 import numpy as np
 from images import load_images, generate_classified_image
 from cells import segment_nuclei_brightfield, segment_nuclei_dapi, calculate_radii_from_nuclei, create_cells, extract_nuclei_coordinates, create_nuclei, get_nucleus_mask
-from visualization import overlay_cell_boundaries
+from visualization import overlay_cell_boundaries, overlay_nuclei_boundaries
 from skimage import io, transform
 from feature_extraction import generate_feature_extractors
 from clustering import cluster
@@ -18,8 +18,8 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument('--he', required=True, help='Path to H&E stained tiff file', type=str)
     parser.add_argument('--output', '-o', help='output tiff file (default to ./classified_stain.tif)',
                         type=str, default='classified_stain.tif')
-    parser.add_argument('--dapi', '-d', help='DAPI layer of CODEX file (default to 0)', type=int, default='0')
-    parser.add_argument('--njobs', '-j', help='Number of CPU cores to run in parallel', type=int, default='8')
+    parser.add_argument('--dapi', '-d', help='DAPI layer of CODEX file (default to 0)', type=int, default=0)
+    parser.add_argument('--njobs', '-j', help='Number of CPU cores to run in parallel', type=int, default=8)
 
     args_ = parser.parse_args()
     logger.debug(f'Received arguments: {args_}')
@@ -32,8 +32,10 @@ if __name__ == '__main__':
     brightfield, codex = load_images(args)
     
     # START OF TESTING CODE
-    # nuclei_subsample = [(1718,5018),(1986,1410),(4062,3084)] # These coordinates were grabbed in a prior run
+    nuclei_subsample = [(1718,5018),(1986,1410),(4062,3084)] # These coordinates were grabbed in a prior run
     # nuclei_mask = get_nucleus_mask(nuclei_subsample[2], codex, DAPI_index=args.dapi, visual_output=True)
+    
+    overlay_nuclei_boundaries(nuclei_subsample[0], codex, args.dapi)
     # END OF TESTING CODE
     
     nuclei_mask = segment_nuclei_dapi(codex, DAPI_index=args.dapi)
