@@ -1,5 +1,5 @@
 import argparse
-from typing import Optional
+from typing import Optional, Tuple, Callable, Union
 
 import tifffile
 from logging import getLogger
@@ -25,18 +25,7 @@ def downscale(image: np.ndarray, scaling_factor: Optional[int] = 3):
     return resized
 
 
-def mapping_function(*args, **kwargs) -> callable:
-    return partial(resize,  *args, **kwargs)
-
-
-def load_images(args_: argparse.Namespace) -> tuple[np.ndarray, np.ndarray]:
-    codex_array, he_array = tifffile.TiffFile(args_.codex).asarray(), tifffile.TiffFile(args_.he).asarray()
-    # TODO: make a way we can choose whether to do this... and specify which dimensions to do it to
-    codex_array = np.transpose(codex_array)
-
-    logger.debug(f'{codex_array.shape=} | {he_array.shape=}')
-    logger.debug(f'{codex_array.dtype=} | {he_array.dtype=}')
-
+def preprocessing(codex_array: np.ndarray, he_array: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
     downsampled_codex = downscale(codex_array, scaling_factor=args_.scaling_factor)
     downsampled_he = downscale(he_array, scaling_factor=args_.scaling_factor)
     del codex_array
@@ -45,7 +34,26 @@ def load_images(args_: argparse.Namespace) -> tuple[np.ndarray, np.ndarray]:
 
     mapper = mapping_function(output_shape=(target_shape[0], target_shape[1]), anti_aliasing=False)
     downsampled_he = mapper(downsampled_he)
+    return downsampled_codex, downsampled_he
 
+
+def mapping_function(*args, **kwargs) -> Callable:
+    return partial(resize,  *args, **kwargs)
+
+
+def load_images(args: argparse.Namespace) -> Union[Tuple[np.ndarray, np.ndarray], np.ndarray]:
+    codex_array, he_array = tifffile.TiffFile(args.codex).asarray(), tifffile.TiffFile(args.he).asarray()
+    # TODO: make a way we can choose whether to do this... and specify which dimensions to do it to
+    codex_array = np.transpose(codex_array)
+
+    logger.info('Loaded CODEX and Brighfield tiff files...')
+    logger.debug(f'{codex_array.shape=} | {he_array.shape=}')
+    logger.debug(f'{codex_array.dtype=} | {he_array.dtype=}')
+
+    if args.codex_only:
+        return codex_array
+
+    downsampled_codex, downsampled_he = preprocessing(codex_array, he_array)
     logger.info('Successfully loaded and resized images')
     logger.debug(f'{downsampled_codex.shape=} | {downsampled_he.shape=}')
     return downsampled_codex, downsampled_he

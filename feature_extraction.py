@@ -7,6 +7,7 @@ logger = getLogger()
 
 def mask_array(pixel_values: np.ndarray) -> np.ma.MaskedArray:
     height, width = pixel_values.shape
+    # TODO: doesnt gracefully cover edge cases where nucleus is on edge of array (should be very few of these)
     radius = min(height, width) // 2
     x, y = np.ogrid[:height, :width]
 
@@ -33,7 +34,7 @@ def generate_feature_extractors() -> list[callable]:
                _max_intensity,
                _min_intensity]
 
-    logger.debug(f'Feature extraction methods: {methods}')
+    logger.debug(f'Feature extraction methods: {[method.__name__ for method in methods]}')
     return methods
 
 

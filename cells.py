@@ -1,14 +1,16 @@
+import logging
 import matplotlib.pyplot as plt
 import numpy as np
+import math
 import cv2
 import threading
 from math import sqrt
 from dataclasses import dataclass
 from typing import Union
-from logging import getLogger
 from skimage.filters import threshold_isodata
+from feature_extraction import mask_array
 
-logger = getLogger()
+logger = logging.getLogger()
 
 
 @dataclass
@@ -23,19 +25,18 @@ class Cell:
     features: Union[tuple, None] = None
     label: Union[int, None] = None
 
-    # Get pixel values, assuming circular cell with center nuclei
     def get_pixel_values(self, codex: np.ndarray) -> np.ndarray:
-        r = self.radius
+        r = int(self.radius)
 
-        # Bounding square for circular nucleus.
         center_x, center_y = self.nucleus.center
         start_x, end_x = max(center_x + r, 0), min(center_x + r, codex.shape[0])
         start_y, end_y = max(center_y - r, 0), min(center_y + r, codex.shape[1])
 
         output_array = np.zeros((2 * r, 2 * r, codex.shape[2]))
 
-        # TODO: will this error if nucleus is too close to edge? unsure.
-        x, y = np.ogrid[-r:r, -r:r]
+        x_len = abs(end_x - start_x) // 2
+        y_len = abs(end_y - start_y) // 2
+        x, y = np.ogrid[-x_len:x_len, -y_len:y_len]
         distance_squared = x ** 2 + y ** 2
         mask = distance_squared <= (r ** 2)
 
@@ -46,12 +47,7 @@ class Cell:
             min_x, min_y = max(r - center_x, 0), max(r - center_y, 0)
             max_x, max_y = min_x + cropped_channel.shape[0], min_y + cropped_channel.shape[1]
             output_array[min_x:max_x, min_y:max_y, i] = cropped_channel
-
-        # Zero out pixels outside center
-        for i in range(output_array.shape[0]):
-            output_array[i, ~mask] = 0
-
-        logger.debug(f'DEBUG: {output_array.shape=}')
+        output_array = mask_array(output_array)
         logger.info('Channel-wise pixel values separated near nuclei...')
         return output_array
 
@@ -126,7 +122,7 @@ def get_nucleus_mask(nucleus_coordinates, codex: np.ndarray, dapi_index, mask_si
 
 
 def process_subset(image: np.ndarray, nuclei_mask: np.ndarray, downsample_factor: int) -> list[Nucleus]:
-    thread = threading.current_thread()
+    thread = threading.get_ident()
     nuclei_list = []
 
     for m in range(image.shape[0]):
@@ -139,13 +135,15 @@ def process_subset(image: np.ndarray, nuclei_mask: np.ndarray, downsample_factor
                 cv2.floodFill(nuclei_mask, None, (n, m), 0)  # Works?
                 if len(nuclei_list) % 500 == 0:
                     logger.debug(f'Thread {thread}: Current nucleus count {len(nuclei_list)}')
+
+    logger.debug(f'Thread {thread} finished...')
     return nuclei_list
 
 
 def process_image(image_subset: np.ndarray, nuclei_mask: np.ndarray, result_list: list,
                   thread_lock: threading.Lock,
                   downsample_factor: int = None):
-    logger.debug(f'{image_subset.shape = }')
+    logger.debug(f'{image_subset.shape=}')
     nuc_list = process_subset(image_subset, nuclei_mask, downsample_factor)
     with thread_lock:
         result_list.extend(nuc_list)
@@ -179,13 +177,11 @@ def extract_nuclei_coordinates(nuclei_mask: np.ndarray,
 
     threads = []
     for image_part in image_parts:
-        thread = threading.Thread(target=process_image, kwargs={
-            'image_subset': image_part,
-            'nuclei_mask': nuclei_mask,
-            'result_list': results,
-            'thread_lock': lock,
-            'downsample_factor': 1
-        })
+        thread = threading.Thread(target=process_image, args=(image_part,
+                                                              nuclei_mask,
+                                                              results,
+                                                              lock,
+                                                              downsample_factor,))
         threads.append(thread)
         thread.start()
 
@@ -257,8 +253,10 @@ def calculate_radii_from_nuclei(nuclei, codex: np.ndarray, dapi_index: int, wind
         nucleus_mask = get_nucleus_mask(nucleus.center, codex, dapi_index, mask_size=window_size, isolated=False)
         _, labels = cv2.connectedComponents(nucleus_mask.astype(np.uint8))
         num_nearby_nuclei = np.max(labels)
+        if num_nearby_nuclei == 0:
+            num_nearby_nuclei = 1
         average_cell_area = (window_size * window_size) / num_nearby_nuclei
-        radius = sqrt(average_cell_area / 3.14)
+        radius = sqrt(average_cell_area / math.pi)
         radii.append(radius)
     return radii
 
@@ -268,7 +266,7 @@ def create_cells(nuclei: list[Nucleus], radii: list[float]) -> list[Cell]:
         raise ValueError('Cannot initialize Cell objects: Radii and nuclei have different lengths: '
                          f'({len(nuclei)=} | {len(radii)=}).')
 
-    return [Cell(nucleus=nucleus, radius=radius) for nucleus, radius in zip(nuclei, radii)]
+    return [Cell(nucleus=nucleus, radius=int(radius)) for nucleus, radius in zip(nuclei, radii)]
 
 
 def create_nuclei(nuclei_coordinates) -> list[Nucleus]:
