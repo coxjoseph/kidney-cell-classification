@@ -8,6 +8,7 @@ from visualization import overlay_cell_boundaries, overlay_nuclei_boundaries
 from skimage import io, transform
 from feature_extraction import generate_feature_extractors
 from clustering import cluster
+from feature_extraction import get_nuclei_size
 
 logger = logging.getLogger()
 
@@ -50,5 +51,6 @@ if __name__ == '__main__':
     #feature_extractors = generate_feature_extractors()
     #[cell.calculate_features(feature_extractors, codex) for cell in cells]
     #cluster(cells)
+
 
     #classified_image = generate_classified_image(brightfield, cells, args, save=True)
