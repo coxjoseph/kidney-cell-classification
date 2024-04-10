@@ -1,12 +1,11 @@
 from os import PathLike
 from typing import Union
 from skimage import io, transform
-from cells import get_nucleus_mask, get_bounding_box
+from cells import get_nucleus_mask_dapi, get_bounding_box, slice_nucleus_window
 import cv2
 import numpy as np
 import matplotlib.pyplot as plt
 import tifffile
-
 
 def load_tiff_as_array(path: Union[str, PathLike]) -> np.ndarray:
     """
@@ -38,7 +37,7 @@ def display_channel_heatmaps(array: np.ndarray, indices: list) -> None:
         plt.colorbar()
         plt.show()
         
-def overlay_nuclei_boundaries(nucleus_coordinates, codex: np.ndarray, DAPI_index, mask_size=256) -> None:
+def overlay_nuclei_boundaries(nucleus_coordinates, nuclei_mask, codex: np.ndarray, DAPI_index, mask_size=256) -> None:
     """
     Display the DAPI CODEX layer with the detected nuclei edges overlayed.
     
@@ -48,14 +47,14 @@ def overlay_nuclei_boundaries(nucleus_coordinates, codex: np.ndarray, DAPI_index
     - DAPI index: Layer of the CODEX file in which DAPI data is stored
     - mask_size: Size of the window around the target nucleus
     """
-    nuclei_mask = get_nucleus_mask(nucleus_coordinates, codex, DAPI_index, mask_size=mask_size, isolated=False)
+    local_nuclei_mask = slice_nucleus_window(nuclei_mask, nucleus_coordinates, window_size=mask_size)
     
     # Perform edge detection using erosion
     structure = cv2.getStructuringElement(cv2.MORPH_CROSS, (3,3))
-    boundaries = cv2.morphologyEx(nuclei_mask, cv2.MORPH_GRADIENT, structure)
+    boundaries = cv2.morphologyEx(local_nuclei_mask, cv2.MORPH_GRADIENT, structure)
     
     plt.figure(figsize=(10, 8))
-    plt.imshow(nuclei_mask)
+    plt.imshow(local_nuclei_mask)
     plt.title('nuclei_mask')
     plt.show()
     
@@ -82,7 +81,7 @@ def overlay_nuclei_boundaries(nucleus_coordinates, codex: np.ndarray, DAPI_index
     # Display
     plt.figure(figsize=(10, 8))
     plt.imshow(nuclei_mask_rgb)
-    plt.title('Cell Boundary')
+    plt.title(f'Nuclei Boundaries at {nucleus_coordinates}')
     plt.show()
         
 def overlay_cell_boundaries(nuclei_mask: np.ndarray, radius) -> None:
@@ -109,7 +108,7 @@ def overlay_cell_boundaries(nuclei_mask: np.ndarray, radius) -> None:
             for channel in range(nuclei_mask_rgb.shape[2]):
                 nuclei_mask_rgb[m][n][channel] = nuclei_mask_rgb[m][n][channel] * 255
                 
-            tol = 5
+            tol = 10 # Determines the thickness of the line
             if abs(int((m-center)**2 + (n-center)**2) - int(radius**2)) < tol:
                 nuclei_mask_rgb[m][n][1] = 255
                 
