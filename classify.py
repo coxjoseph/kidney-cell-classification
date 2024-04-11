@@ -50,3 +50,7 @@ if __name__ == '__main__':
 
 
     #classified_image = generate_classified_image(brightfield, cells, args, save=True)
+    
+    ### Testing Testing 1 2 3 ###
+    
+    print(nuclei)
