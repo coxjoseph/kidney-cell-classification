@@ -63,16 +63,17 @@ class Cell:
         self.features = tuple(features)
 
 # Calculates and returns a single small-window nucleus mask from the original CODEX DAPI layer.
-def get_nucleus_mask_dapi(nucleus_coordinates, codex: np.ndarray, DAPI_index, mask_size=256, opening_radius=2.5, isolated=True, visual_output=False) -> np.ndarray:
+def get_nucleus_mask_dapi(nucleus_coordinates, codex: np.ndarray, DAPI_index, global_threshold, window_size=256, erosion_radius=2.5, isolated=True, visual_output=False) -> np.ndarray:
     # Get bounding box coordinates
-    upper_m, lower_m, left_n, right_n = get_bounding_box(nucleus_coordinates, mask_size, codex_shape=codex.shape)
+    upper_m, lower_m, left_n, right_n = get_bounding_box(nucleus_coordinates, window_size, codex_shape=codex.shape)
     
     # Get slice of DAPI CODEX around the target coordinates
     subset_indices = (DAPI_index, slice(upper_m, lower_m), slice(left_n, right_n))
     nuclei_mask = codex[subset_indices]
         
-    # Threshold nucleus stain
-    threshold = threshold_otsu(nuclei_mask)
+    # Threshold nucleus stain using the higher of the global and local threshold values
+    # Setting a minimum threshold of the global prevents erroneous detection of nuclei in regions that contain zero nuclei
+    threshold = max(global_threshold, threshold_otsu(nuclei_mask)) 
     nuclei_mask = (nuclei_mask > threshold).astype(np.uint8) # Binarizes the image
     
     if visual_output:
@@ -97,7 +98,7 @@ def get_nucleus_mask_dapi(nucleus_coordinates, codex: np.ndarray, DAPI_index, ma
         plt.show()
     
     # Perform erosion to remove very small nuclei
-    kernel = make_circular_kernel(opening_radius)
+    kernel = make_circular_kernel(erosion_radius)
     nuclei_mask = cv2.morphologyEx(nuclei_mask, cv2.MORPH_ERODE, kernel)
     
     if visual_output:
@@ -109,7 +110,7 @@ def get_nucleus_mask_dapi(nucleus_coordinates, codex: np.ndarray, DAPI_index, ma
     
     # Erase all neighboring, disconnected nuclei from the mask
     if isolated:
-        nuclei_mask = isolate_nuclei(nuclei_mask, opening_radius, visual_output)
+        nuclei_mask = isolate_nuclei(nuclei_mask, erosion_radius, visual_output)
     
     return nuclei_mask
 
@@ -285,6 +286,7 @@ def segment_nuclei_dapi(codex: np.ndarray, DAPI_index=0, erosion_radius=2.5, win
     
     # Allocate result array
     whole_image_mask = np.empty((num_m_iterations*window_size, num_n_iterations*window_size),dtype=np.uint8)
+    global_threshold = threshold_otsu(codex[DAPI_index])
     
     for m in range(0, num_m_iterations):
         for n in range(0, num_n_iterations):
@@ -292,7 +294,7 @@ def segment_nuclei_dapi(codex: np.ndarray, DAPI_index=0, erosion_radius=2.5, win
             box_center = (m*window_size + window_size/2, n*window_size + window_size/2)
     
             # Get a local (small window) nuclei mask
-            local_mask = get_nucleus_mask_dapi(box_center, codex, DAPI_index, window_size, erosion_radius, isolated=False, visual_output=False)
+            local_mask = get_nucleus_mask_dapi(box_center, codex, DAPI_index, global_threshold=global_threshold, window_size=window_size, erosion_radius=erosion_radius, isolated=False, visual_output=False)
             
             # Copy local nuclei mask to the global mask
             whole_image_mask[m*window_size:(m+1)*window_size, n*window_size:(n+1)*window_size] = local_mask
@@ -300,7 +302,7 @@ def segment_nuclei_dapi(codex: np.ndarray, DAPI_index=0, erosion_radius=2.5, win
            
 
 # Mask out all nuclei not connected to the nuclei at the center of the window
-def isolate_nuclei(nuclei_window: np.ndarray, opening_radius, visual_output=False) -> np.ndarray:
+def isolate_nuclei(nuclei_window: np.ndarray, erosion_radius, visual_output=False) -> np.ndarray:
     isolated_window = nuclei_window.copy()
     primary_nuclei_marker = 2 # Arbitrary value to separate the center nuclei from other nuclei visible in the window
     center = int(nuclei_window.shape[0]/2)
@@ -308,7 +310,7 @@ def isolate_nuclei(nuclei_window: np.ndarray, opening_radius, visual_output=Fals
     isolated_window = (isolated_window == primary_nuclei_marker).astype(np.uint8)
     
     # Perform dilation to restore the nucleus to its pre-erosion size
-    kernel = make_circular_kernel(opening_radius)
+    kernel = make_circular_kernel(erosion_radius)
     isolated_window = cv2.morphologyEx(isolated_window, cv2.MORPH_DILATE, kernel)
     
     if visual_output:
@@ -346,12 +348,12 @@ def create_nuclei(nuclei_coordinates) -> list[Nucleus]:
         nuclei.append(Nucleus(center=nuc))
     return nuclei
 
-def get_bounding_box(nucleus_coordinates, mask_size, codex_shape) -> list[int]:        
+def get_bounding_box(nucleus_coordinates, window_size, codex_shape) -> list[int]:        
         # Determine a bounding box for a small window around a target nucleus
-        upper_m = int(nucleus_coordinates[0]-mask_size/2)
-        lower_m = int(nucleus_coordinates[0]+mask_size/2)
-        left_n = int(nucleus_coordinates[1]-mask_size/2)
-        right_n = int(nucleus_coordinates[1]+mask_size/2)
+        upper_m = int(nucleus_coordinates[0]-window_size/2)
+        lower_m = int(nucleus_coordinates[0]+window_size/2)
+        left_n = int(nucleus_coordinates[1]-window_size/2)
+        right_n = int(nucleus_coordinates[1]+window_size/2)
 
         # If the bounding box goes outside of the image, shift it such that it is inside of the image
         if (left_n < 0):
