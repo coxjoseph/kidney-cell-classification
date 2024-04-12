@@ -32,7 +32,9 @@ if __name__ == '__main__':
     brightfield, codex = load_images(args)
     
     nuclei_mask_dapi = segment_nuclei_dapi(codex, DAPI_index=args.dapi, visual_output=False)
+    nuclei_mask_brightfield = segment_nuclei_brightfield(brightfield, window_size=512, visual_output=False)
     nuclei = extract_nuclei_coordinates(nuclei_mask_dapi, downsample_factor=4, num_processes=args.njobs, visual_output=False)
+    #nuclei = extract_nuclei_coordinates(nuclei_mask_brightfield, downsample_factor=4, num_processes=args.njobs, visual_output=False)
     radii = calculate_radii_from_nuclei(nuclei, nuclei_mask_dapi, window_size=128)
     cells = create_cells(nuclei, radii)
     
