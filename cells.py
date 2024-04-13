@@ -197,8 +197,11 @@ def segment_nuclei_brightfield(brightfield: np.ndarray, window_size=512, visual_
     segmented_nuclei = []
 
     # Iterate through tiles
-    for r in range(0, num_rows, window_size):
-        for c in range(0, num_cols, window_size):
+    for m in range(0, num_m_iterations):
+        for n in range(0, num_n_iterations):
+            r = m*window_size
+            c = n*window_size
+            
             tile = brightfield[r:r+window_size, c:c+window_size, :]
 
             # Resize tile to a fixed size

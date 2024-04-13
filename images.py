@@ -3,9 +3,10 @@ import tifffile
 from logging import getLogger
 import numpy as np
 from skimage.transform import resize
-from cells import Cell
+from cells import Cell, slice_nucleus_window
 import matplotlib.pyplot as plt
 import cv2
+import imutils
 
 logger = getLogger()
 
@@ -24,7 +25,7 @@ def load_images(args_: argparse.Namespace) -> tuple[np.ndarray, np.ndarray]:
     return he_array, codex_array
 
 # Reference: https://pyimagesearch.com/2020/08/31/image-alignment-and-registration-with-opencv/
-def register_images(dapi_mask: np.ndarray, brightfield_mask: np.ndarray) -> np.ndarray:
+def register_images(dapi_mask: np.ndarray, brightfield_mask: np.ndarray, visual_output=False) -> np.ndarray:
     """
     Keypoint-based image registration
     
@@ -33,6 +34,10 @@ def register_images(dapi_mask: np.ndarray, brightfield_mask: np.ndarray) -> np.n
     - brightfield_mask: A binary mask of nuclei segmentation from the brightfield H&E image. The dimensions and aspect 
                         ratio do not need to match the dapi_mask.
     """
+    
+    # Convert the masks in uint8 arrays ranging from 0 to 255
+    dapi_mask = dapi_mask.astype(np.uint8) * 255
+    brightfield_mask = brightfield_mask.astype(np.uint8) * 255
     
     # Detect keypoints from the binary masks
     max_features = 500
@@ -48,8 +53,16 @@ def register_images(dapi_mask: np.ndarray, brightfield_mask: np.ndarray) -> np.n
     # Sort the matches by their hamming distance
     matches = sorted(matches, key=lambda x:x.distance)
     keep_percent = 0.15
-    keep = int(len(matches) * keepPercent) # Calculate the number of matches to keep
+    keep = int(len(matches) * keep_percent) # Calculate the number of matches to keep
     matches = matches[:keep] # Discard the less favorable matches
+    
+    
+    print(f'Matches: {len(matches)}')
+    if visual_output:
+        matchedVis = cv2.drawMatches(dapi_mask, kpsA, brightfield_mask, kpsB, matches, None, matchesThickness=150)
+        matchedVis = imutils.resize(matchedVis, width=1000)
+        cv2.imshow("Matched Keypoints", matchedVis)
+        cv2.waitKey(0)
     
     # Coordinates of matches
     ptsA = np.zeros((len(matches), 2), dtype="float")
@@ -59,15 +72,48 @@ def register_images(dapi_mask: np.ndarray, brightfield_mask: np.ndarray) -> np.n
         ptsA[i] = kpsA[m.queryIdx].pt
         ptsB[i] = kpsB[m.trainIdx].pt
         
+
+        
     # Calculate homography matrix
     (H, mask) = cv2.findHomography(ptsA, ptsB, method=cv2.RANSAC)
     
 	# Align the images using the homography matrix
-    (h, w) = template.shape[:2]
-    aligned = cv2.warpPerspective(dapi_mask, H, (w, h))
+    (h, w) = brightfield_mask.shape[:2]
+    aligned_dapi = cv2.warpPerspective(dapi_mask, H, (w, h))
+    
+    if (visual_output):
+        target_coordinates = (5000,5000) # Arbitrary location on the image to compare
+        dapi_slice = slice_nucleus_window(aligned_dapi, target_coordinates, window_size=512)
+        brightfield_slice = slice_nucleus_window(brightfield_mask, target_coordinates, window_size=512)
+        
+        # Show entire mask registration
+        plt.figure(figsize=(18, 6))
+        plt.subplot(1, 2, 1)
+        plt.imshow(aligned_dapi, cmap='gray')
+        plt.title('Aligned DAPI Segmentation')
+        plt.axis('off')
+
+        plt.subplot(1, 2, 2)
+        plt.imshow(brightfield_mask, cmap='gray')
+        plt.title('Mask from H&E Segmentation')
+        plt.axis('off')
+        plt.show()
+        
+        # Show small region registration
+        plt.figure(figsize=(18, 6))
+        plt.subplot(1, 2, 1)
+        plt.imshow(dapi_slice, cmap='gray')
+        plt.title('Mask from DAPI Segmentation')
+        plt.axis('off')
+
+        plt.subplot(1, 2, 2)
+        plt.imshow(brightfield_slice, cmap='gray')
+        plt.title('Mask from H&E Segmentation')
+        plt.axis('off')
+        plt.show()
     
 	# return the aligned image
-    return aligned
+    return aligned_dapi
 
 def generate_classified_image(brightfield: np.ndarray,
                               cells: list[Cell],
