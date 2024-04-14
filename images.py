@@ -11,11 +11,26 @@ import imutils
 logger = getLogger()
 
 
-def load_images(args_: argparse.Namespace) -> tuple[np.ndarray, np.ndarray]:
+def load_images(args_: argparse.Namespace, rotate_brightfield) -> tuple[np.ndarray, np.ndarray]:
+    print('Loading images...', flush=True)
     codex_array, he_array = tifffile.TiffFile(args_.codex).asarray(), tifffile.TiffFile(args_.he).asarray()
 
     logger.debug(f'{codex_array.shape=} | {he_array.shape=}')
-
+    
+    # Rotate the brightfield to match the orientation of the CODEX
+    if (rotate_brightfield):
+        # Coordinate space of the rotated brightfield
+        num_rows = he_array.shape[1]
+        num_columns = he_array.shape[0]
+        print(f'Num rows, new image: {num_rows}')
+        print(f'Num cols, new image: {num_columns}')
+        
+        brightfield_rotated = np.empty((num_rows, num_columns, 3), dtype=np.uint8)
+        for m in range(0, num_rows):
+            for n in range(0, num_columns):
+                brightfield_rotated[m,n,:] = he_array[n, num_rows-m-1, :]
+        he_array = brightfield_rotated        
+       
     target_shape = he_array.shape
     #codex_array = resize(codex_array, output_shape=(target_shape[0], target_shape[1]), order=1, mode='reflect',
     #                     anti_aliasing=True)
@@ -34,6 +49,7 @@ def register_images(dapi_mask: np.ndarray, brightfield_mask: np.ndarray, visual_
     - brightfield_mask: A binary mask of nuclei segmentation from the brightfield H&E image. The dimensions and aspect 
                         ratio do not need to match the dapi_mask.
     """
+    print('Aligning images...', flush=True)
     
     # Convert the masks in uint8 arrays ranging from 0 to 255
     dapi_mask = dapi_mask.astype(np.uint8) * 255

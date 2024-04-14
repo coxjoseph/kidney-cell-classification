@@ -8,12 +8,14 @@ from typing import Union
 from logging import getLogger
 from skimage.filters import threshold_isodata, threshold_otsu
 from skimage import io, transform
+from feature_extraction import get_nuclei_size
 
 logger = getLogger()
 
 @dataclass
 class Nucleus:
     center: tuple
+    pixel_area: int # Number of ON pixels in the binary mask
 
 @dataclass
 class Cell:
@@ -152,6 +154,7 @@ def extract_nuclei_coordinates(nuclei_mask: np.ndarray, downsample_factor=2, num
 # Individual process implementation for extracting nuclei coordinates from a slice of the image
 # Image is sliced into groups of rows based on process ID
 # Boundary conditions will cause double counting of some nuclei along the slice edges
+# Expects an already downsampled mask to be passed in
 def extract_nuclei_coordinates_parallel(nuclei_mask: np.ndarray, num_processes, process_ID, downsample_factor, verbose=True)-> list[Nucleus]:
     # Image is divided evenly along its rows for each process
     # Determines which block of rows this process operates on
@@ -166,7 +169,10 @@ def extract_nuclei_coordinates_parallel(nuclei_mask: np.ndarray, num_processes, 
         for n in range(0, nuclei_mask.shape[1]):
             # If a pixel is hit, append it to the nuclei list and set all connected pixels to zero
             if nuclei_mask[m][n]:
-                nuc = Nucleus((m*downsample_factor + int(downsample_factor/2),n*downsample_factor + int(downsample_factor/2)))
+                coordinates_rescaled = (m*downsample_factor + int(downsample_factor/2),n*downsample_factor + int(downsample_factor/2)) # Convert coordinates back to original coordinate space
+                # Nucleus size instantiated to -1 to indicate it has not been calculated yet
+                # Since only the downsampled mask is passed here, it is impossible to get an accurate size estimate
+                nuc = Nucleus(coordinates_rescaled, pixel_area=-1) 
                 nuclei_list.append(nuc)
                 cv2.floodFill(nuclei_mask, None, (n,m), 0)# Remove the found nucleus from the mask
                 count = count + 1
@@ -182,6 +188,7 @@ def make_circular_kernel(kern_radius) -> np.ndarray:
 
 def segment_nuclei_brightfield(brightfield: np.ndarray, window_size=512, visual_output=False) -> np.ndarray:
     # Build a whole-image nuclei segmentation by doing piecewise small window segmentations of the brightfield image and merging the results. If the image dimensions are not # multiples of the window size, the image will be cropped to the nearest multiple.
+    print('Segmenting brightfield nuclei...', flush=True)
     
     num_m_iterations = int(brightfield.shape[0]/window_size)
     num_n_iterations = int(brightfield.shape[1]/window_size)
@@ -283,6 +290,7 @@ def segment_nuclei_brightfield(brightfield: np.ndarray, window_size=512, visual_
     
 def segment_nuclei_dapi(codex: np.ndarray, DAPI_index=0, erosion_radius=2.5, window_size=256, visual_output=False) -> np.ndarray:
     # Build a whole-image nuclei segmentation by doing piecewise small window segmentations of the DAPI image and merging the results. If the image dimensions are not # multiples of the window size, the image will be cropped to the nearest multiple.
+    print('Segmenting DAPI nuclei...', flush=True)
     
     num_m_iterations = int(codex.shape[1]/window_size)
     num_n_iterations = int(codex.shape[2]/window_size)
@@ -379,3 +387,21 @@ def slice_nucleus_window(nuclei_mask: np.ndarray, center_coordinates, window_siz
     upper_m, lower_m, left_n, right_n = get_bounding_box(center_coordinates, window_size, codex_shape=codex_shape)
     nucleus_mask = nuclei_mask[upper_m:lower_m, left_n:right_n] # Grab the relevant window of the already segmented nucleus mask
     return nucleus_mask
+    
+# Removes a percentage of the largest nuclei from a binary mask
+# Intent is to improve H&E segmentation by removing large non-cell artifacts (such as slice boundaries) from the segmentation
+def remove_largest_nuclei(nuclei_mask: np.ndarray, cull_percent=0.10, visual_output=False) -> np.ndarray:
+    
+    return nuclei_mask
+    
+# Takes in a list of Nucleus objects, a global binary nucleus mask, and the maximum window size around each nucleus
+# Returns a list of Nuclei with their size parameters corrected
+def calculate_nuclei_sizes(nuclei: list[Nucleus], nuclei_mask, window_size=128) -> list[Nucleus]:
+    print('Calculating nuclei sizes...', flush=True)
+    debug_count = 0
+    for nuc in nuclei:
+        nucleus_mask = slice_nucleus_window(nuclei_mask, nuc.center, window_size)
+        nucleus_mask = isolate_nuclei(nucleus_mask, erosion_radius=2.5)
+        pixel_area = get_nuclei_size(nucleus_mask)
+        nuc.pixel_area = pixel_area
+    return nuclei

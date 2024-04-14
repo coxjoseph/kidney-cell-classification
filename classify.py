@@ -3,7 +3,7 @@ import logging
 import numpy as np
 import matplotlib.pyplot as plt
 from images import load_images, generate_classified_image, register_images
-from cells import segment_nuclei_brightfield, segment_nuclei_dapi, calculate_radii_from_nuclei, create_cells, extract_nuclei_coordinates, create_nuclei, get_nucleus_mask_dapi, slice_nucleus_window
+from cells import segment_nuclei_brightfield, segment_nuclei_dapi, calculate_radii_from_nuclei, create_cells, extract_nuclei_coordinates, create_nuclei, get_nucleus_mask_dapi, slice_nucleus_window, calculate_nuclei_sizes
 from visualization import overlay_cell_boundaries, overlay_nuclei_boundaries
 from skimage import io, transform
 from feature_extraction import generate_feature_extractors
@@ -30,11 +30,12 @@ def parse_arguments() -> argparse.Namespace:
 if __name__ == '__main__':
     args = parse_arguments()
 
-    brightfield, codex = load_images(args)
+    brightfield, codex = load_images(args, rotate_brightfield=True)
     
     nuclei_mask_dapi = segment_nuclei_dapi(codex, DAPI_index=args.dapi, visual_output=False)
     nuclei_mask_brightfield = segment_nuclei_brightfield(brightfield, window_size=512, visual_output=False)
     nuclei = extract_nuclei_coordinates(nuclei_mask_dapi, downsample_factor=4, num_processes=args.njobs, visual_output=False)
+    nuclei = calculate_nuclei_sizes(nuclei, nuclei_mask_dapi, window_size=128)
     #nuclei = extract_nuclei_coordinates(nuclei_mask_brightfield, downsample_factor=4, num_processes=args.njobs, visual_output=False)
     radii = calculate_radii_from_nuclei(nuclei, nuclei_mask_dapi, window_size=128)
     cells = create_cells(nuclei, radii)
