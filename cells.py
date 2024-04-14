@@ -14,7 +14,7 @@ logger = getLogger()
 
 @dataclass
 class Nucleus:
-    center: tuple
+    center: tuple # Nucleus center in (m,n) coordinate space
     pixel_area: int # Number of ON pixels in the binary mask
 
 @dataclass
@@ -390,8 +390,45 @@ def slice_nucleus_window(nuclei_mask: np.ndarray, center_coordinates, window_siz
     
 # Removes a percentage of the largest nuclei from a binary mask
 # Intent is to improve H&E segmentation by removing large non-cell artifacts (such as slice boundaries) from the segmentation
-def remove_largest_nuclei(nuclei_mask: np.ndarray, cull_percent=0.10, visual_output=False) -> np.ndarray:
+def remove_largest_nuclei(nuclei: list[Nucleus], nuclei_mask: np.ndarray, cull_percent=0.05, visual_output=False) -> np.ndarray:
+    print('Removing large outlier nuclei...')
     
+    if (visual_output):
+        # Output not shown until after computation is complete
+        plt.figure(figsize=(18, 6))
+        plt.subplot(1, 2, 1)
+        plt.imshow(nuclei_mask, cmap='gray')
+        plt.title('Binary Mask before Culling Large Nuclei')
+        plt.axis('off')
+    
+    # Pull a numpy array of sizes from the nuclei list
+    num_nuclei = len(nuclei)
+    pixel_areas = np.empty(num_nuclei, dtype=int)
+    for n in range(num_nuclei):
+        pixel_areas[n] = nuclei[n].pixel_area
+        
+    hist, bin_edges = np.histogram(pixel_areas, range=(0,255), density=True) # Obtain the probability density function
+    cdf = np.cumsum(hist) # Obtain the cumulative density function
+    
+    # Find an area threshold
+    cdf_cutoff = 1 - cull_percent
+    index = np.argmax(cdf >= cdf_cutoff) # Gets the first index of where the cdf is greater than the cutoff
+    threshold = bin_edges[index]
+    
+    # Iterate through the list of nuclei and mask out those that have a size greater than the threshold
+    for nuc in nuclei:
+        if (nuc.pixel_area >= threshold):
+            m = nuc.center[0]
+            n = nuc.center[1]
+            cv2.floodFill(nuclei_mask, None, (n,m), 0)# Remove the found nucleus from the mask. OpenCV uses (x,y) coordinate space
+            
+    if (visual_output):
+        plt.subplot(1, 2, 2)
+        plt.imshow(nuclei_mask, cmap='gray')
+        plt.title('Binary Mask after Culling Large Nuclei')
+        plt.axis('off')
+        plt.show()
+        
     return nuclei_mask
     
 # Takes in a list of Nucleus objects, a global binary nucleus mask, and the maximum window size around each nucleus

@@ -18,16 +18,15 @@ def load_images(args_: argparse.Namespace, rotate_brightfield) -> tuple[np.ndarr
     logger.debug(f'{codex_array.shape=} | {he_array.shape=}')
     
     # Rotate the brightfield to match the orientation of the CODEX
+    print('Rotating brightfield...', flush=True)
     if (rotate_brightfield):
         # Coordinate space of the rotated brightfield
         num_rows = he_array.shape[1]
         num_columns = he_array.shape[0]
-        print(f'Num rows, new image: {num_rows}')
-        print(f'Num cols, new image: {num_columns}')
         
         brightfield_rotated = np.empty((num_rows, num_columns, 3), dtype=np.uint8)
-        for m in range(0, num_rows):
-            for n in range(0, num_columns):
+        for n in range(0, num_columns):
+            for m in range(0, num_rows):
                 brightfield_rotated[m,n,:] = he_array[n, num_rows-m-1, :]
         he_array = brightfield_rotated        
        
@@ -40,7 +39,7 @@ def load_images(args_: argparse.Namespace, rotate_brightfield) -> tuple[np.ndarr
     return he_array, codex_array
 
 # Reference: https://pyimagesearch.com/2020/08/31/image-alignment-and-registration-with-opencv/
-def register_images(dapi_mask: np.ndarray, brightfield_mask: np.ndarray, visual_output=False) -> np.ndarray:
+def register_images(dapi_mask: np.ndarray, brightfield_mask: np.ndarray, max_features, visual_output=False) -> np.ndarray:
     """
     Keypoint-based image registration
     
@@ -56,7 +55,6 @@ def register_images(dapi_mask: np.ndarray, brightfield_mask: np.ndarray, visual_
     brightfield_mask = brightfield_mask.astype(np.uint8) * 255
     
     # Detect keypoints from the binary masks
-    max_features = 500
     orb = cv2.ORB_create(max_features)
     (kpsA, descsA) = orb.detectAndCompute(dapi_mask, None) # Image to be warped
     (kpsB, descsB) = orb.detectAndCompute(brightfield_mask, None) # Template image
@@ -68,7 +66,7 @@ def register_images(dapi_mask: np.ndarray, brightfield_mask: np.ndarray, visual_
     
     # Sort the matches by their hamming distance
     matches = sorted(matches, key=lambda x:x.distance)
-    keep_percent = 0.15
+    keep_percent = 0.0001
     keep = int(len(matches) * keep_percent) # Calculate the number of matches to keep
     matches = matches[:keep] # Discard the less favorable matches
     
