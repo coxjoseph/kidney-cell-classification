@@ -18,18 +18,14 @@ def load_images(args_: argparse.Namespace, rotate_brightfield) -> tuple[np.ndarr
     logger.debug(f'{codex_array.shape=} | {he_array.shape=}')
     
     # Rotate the brightfield to match the orientation of the CODEX
-    print('Rotating brightfield...', flush=True)
     if (rotate_brightfield):
-        # Coordinate space of the rotated brightfield
-        num_rows = he_array.shape[1]
-        num_columns = he_array.shape[0]
-        
-        brightfield_rotated = np.empty((num_rows, num_columns, 3), dtype=np.uint8)
-        for n in range(0, num_columns):
-            for m in range(0, num_rows):
-                brightfield_rotated[m,n,:] = he_array[n, num_rows-m-1, :]
-        he_array = brightfield_rotated        
-       
+        print('Rotating brightfield...', flush=True)
+        # Transpose the array to perform a 90-degree counterclockwise rotation
+        he_array = np.transpose(he_array, axes=(1, 0, 2))  # Swap rows and columns
+    
+        # Flip the array horizontally to complete the rotation
+        he_array = np.flip(he_array, axis=0)  # Flip along the first axis (rows)
+
     target_shape = he_array.shape
     #codex_array = resize(codex_array, output_shape=(target_shape[0], target_shape[1]), order=1, mode='reflect',
     #                     anti_aliasing=True)
@@ -50,6 +46,10 @@ def register_images(dapi_mask: np.ndarray, brightfield_mask: np.ndarray, max_fea
     """
     print('Aligning images...', flush=True)
     
+    # Take distance transform of the two nuclei masks
+    #dapi_mask = cv2.distanceTransform(np.uint8(dapi_mask), cv2.DIST_L2, 3)
+    #brightfield_mask = cv2.distanceTransform(np.uint8(brightfield_mask), cv2.DIST_L2, 3)
+    
     # Convert the masks in uint8 arrays ranging from 0 to 255
     dapi_mask = dapi_mask.astype(np.uint8) * 255
     brightfield_mask = brightfield_mask.astype(np.uint8) * 255
@@ -66,10 +66,9 @@ def register_images(dapi_mask: np.ndarray, brightfield_mask: np.ndarray, max_fea
     
     # Sort the matches by their hamming distance
     matches = sorted(matches, key=lambda x:x.distance)
-    keep_percent = 0.0001
+    keep_percent = 100/max_features
     keep = int(len(matches) * keep_percent) # Calculate the number of matches to keep
     matches = matches[:keep] # Discard the less favorable matches
-    
     
     print(f'Matches: {len(matches)}')
     if visual_output:
@@ -162,3 +161,10 @@ def generate_classified_image(brightfield: np.ndarray,
         plt.savefig(args.output)
     plt.show()
     logger.info(f'Saved image at {args.output}')
+    
+def global_dilate(nuclei_mask: np.ndarray, dilation_radius) -> np.ndarray:
+    nuclei_mask_dilated = np.copy(nuclei_mask) # Preserve the original mask
+    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2*dilation_radius, 2*dilation_radius))
+    print('Beginning dilation...', flush=True)
+    nuclei_mask_dilated = cv2.dilate(nuclei_mask, kernel)
+    return nuclei_mask_dilated
