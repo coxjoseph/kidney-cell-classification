@@ -186,87 +186,6 @@ def make_circular_kernel(kern_radius) -> np.ndarray:
     kernel = ((x - center) ** 2 + (y - center) ** 2 <= kern_radius ** 2).astype(np.uint8)
     return kernel
 
-def get_nucleus_mask_brightfield(brightfield: np.ndarray) -> np.ndarray:
-    tile_size = 512
-    num_rows, num_cols, _ = brightfield.shape
-
-    # Initialize arrays to store results
-    stain_images = []
-    binary_masks = []
-    segmented_nuclei = []
-
-    # Iterate through tiles
-    for r in range(0, num_rows, tile_size):
-        for c in range(0, num_cols, tile_size):
-            tile = brightfield[r:r+tile_size, c:c+tile_size, :]
-
-            # Resize tile to a fixed size
-            tile = cv2.resize(tile, (tile_size, tile_size))
-
-            # Pad tile
-            border_width = 1
-            tile_padded = np.pad(tile, ((border_width, border_width), (border_width, border_width), (0, 0)), mode='constant')
-
-            # Define stain matrix for hematoxylin and eosin
-            stain_matrix = np.array([[0.65, 0.70, 0.29],
-                                    [0.07, 0.99, 0.11],
-                                    [0.27, 0.57, 0.78]])
-
-            # Perform color deconvolution
-            stain_image = np.dot(np.reshape(tile_padded, (-1, 3)), np.linalg.inv(stain_matrix)).reshape(tile_padded.shape)
-            stain_images.append(stain_image)
-
-            # Extract the hematoxylin channel (first channel after deconvolution)
-            hematoxylin_channel_padded = stain_image[:, :, 0]
-
-            # Adaptive thresholding using Gaussian filters
-            binary_mask = hematoxylin_channel_padded < threshold_otsu(hematoxylin_channel_padded)
-            binary_mask_resized = cv2.resize(binary_mask.astype(np.uint8), (tile_size, tile_size))
-
-            # Morphological operations to remove small noise
-            kernel = np.ones((5, 5), np.uint8)
-            binary_mask_resized = cv2.erode(binary_mask_resized, kernel, iterations=1)
-            binary_mask_resized = cv2.dilate(binary_mask_resized, kernel, iterations=1)
-
-            binary_masks.append(binary_mask_resized)
-
-            # Watershed transform (using OpenCV)
-            distance_transform = cv2.distanceTransform(np.uint8(~binary_mask_resized), cv2.DIST_L2, 3)
-            _, markers = cv2.connectedComponents(binary_mask_resized)
-            markers = markers + 1
-            markers[~binary_mask_resized] = 0
-
-            # Ensure the input image and markers have the same size
-            if tile.shape[:2] != markers.shape:
-                markers = cv2.resize(markers, (tile.shape[1], tile.shape[0]), interpolation=cv2.INTER_NEAREST)
-
-            labels = cv2.watershed(cv2.cvtColor(tile, cv2.COLOR_RGB2BGR), markers)
-
-            # Post-processing to clean up watershed segmentation
-            labels[binary_mask_resized == 0] = 0
-            segmented_nuclei.append(labels)
-
-    # Display center tile results
-    center_tile_index_row = num_rows // 2 // tile_size
-    center_tile_index_col = num_cols // 2 // tile_size
-
-    plt.figure(figsize=(18, 6))
-
-    plt.subplot(1, 2, 1)
-    plt.imshow(binary_masks[center_tile_index_row * (num_cols // tile_size) + center_tile_index_col], cmap='gray')
-    plt.title('Binary Mask (Center Tile)')
-    plt.axis('off')
-
-    plt.subplot(1, 2, 2)
-    plt.imshow(segmented_nuclei[center_tile_index_row * (num_cols // tile_size) + center_tile_index_col], cmap='nipy_spectral')
-    plt.title('Segmented Nuclei (Center Tile)')
-    plt.axis('off')
-
-    plt.show()
-
-    return nuclei_mask
-
-def segment_nuclei_brightfield(brightfield: np.ndarray) -> np.ndarray:
 def segment_nuclei_brightfield(brightfield: np.ndarray, window_size=512, visual_output=False) -> np.ndarray:
     # Build a whole-image nuclei segmentation by doing piecewise small window segmentations of the brightfield image and merging the results. If the image dimensions are not # multiples of the window size, the image will be cropped to the nearest multiple.
     print('Segmenting brightfield nuclei...', flush=True)
@@ -363,9 +282,6 @@ def segment_nuclei_brightfield(brightfield: np.ndarray, window_size=512, visual_
         for n in range(0, num_n_iterations):
             # Calculate the box boundaries for the current window
             box_center = (m*window_size + window_size/2, n*window_size + window_size/2)
-    
-            # Get a local (small window) nuclei mask
-            local_mask = get_nucleus_mask_brightfield(box_center, codex, DAPI_index, window_size, erosion_radius, isolated=False, visual_output=False)
             
             # Copy local nuclei mask to the global mask
             whole_image_mask[m*window_size:(m+1)*window_size, n*window_size:(n+1)*window_size] = binary_masks[m*num_n_iterations+n]
