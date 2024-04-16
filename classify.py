@@ -32,30 +32,14 @@ if __name__ == '__main__':
 
     brightfield, codex = load_images(args, rotate_brightfield=True)
     
-    # START OF TESTING CODE
-
-    # nuclei_subsample = [(1718,5018),(1986,1410),(4062,3084)] # These coordinates were grabbed in a prior run
-    # nuclei_mask = get_nucleus_mask(nuclei_subsample[2], codex, DAPI_index=args.dapi, visual_output=True)
-
-    # END OF TESTING CODE
-    
-    brightfield_nuclei_mask = segment_nuclei_brightfield(brightfield)
-    #nuclei_mask = segment_nuclei_dapi(codex, DAPI_index=args.dapi)
-    #nuclei = extract_nuclei_coordinates(nuclei_mask, downsample_factor=4, num_processes=args.njobs, visual_output=False)
-    #radii = calculate_radii_from_nuclei(nuclei, codex, DAPI_index=args.dapi, window_size=128)
-    #cells = create_cells(nuclei, radii)
-    #nuclei_mask_dapi = segment_nuclei_dapi(codex, DAPI_index=args.dapi, visual_output=False)
-    #nuclei = extract_nuclei_coordinates(nuclei_mask_dapi, downsample_factor=4, num_processes=args.njobs, visual_output=False)
-    #radii = calculate_radii_from_nuclei(nuclei, nuclei_mask_dapi, window_size=128)
-    #cells = create_cells(nuclei, radii)
     #nuclei_mask_dapi = segment_nuclei_dapi(codex, DAPI_index=args.dapi, visual_output=False)
     nuclei_mask_brightfield = segment_nuclei_brightfield(brightfield, window_size=512, visual_output=False)
     #nuclei_dapi = extract_nuclei_coordinates(nuclei_mask_dapi, downsample_factor=4, num_processes=args.njobs, visual_output=False)
     #nuclei_dapi = calculate_nuclei_sizes(nuclei_dapi, nuclei_mask_dapi, window_size=128)
     nuclei_brightfield = extract_nuclei_coordinates(nuclei_mask_brightfield, downsample_factor=4, num_processes=args.njobs, visual_output=False)
     nuclei_mask_brightfield = remove_largest_nuclei(nuclei_brightfield, nuclei_mask_brightfield, cull_percent=0.05, visual_output=True)
-    #radii = calculate_radii_from_nuclei(nuclei_dapi, nuclei_mask_dapi, window_size=128)
-    #cells = create_cells(nuclei_dapi, radii)
+    radii = calculate_radii_from_nuclei(nuclei_dapi, nuclei_mask_dapi, window_size=128)
+    cells = create_cells(nuclei_dapi, radii)
     
     #registered_image = register_images(nuclei_mask_dapi, nuclei_mask_brightfield, max_features=100000, visual_output=True)
     
