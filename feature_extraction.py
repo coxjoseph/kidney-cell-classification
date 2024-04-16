@@ -1,7 +1,6 @@
 import numpy as np
 from logging import getLogger
 
-
 logger = getLogger()
 
 
@@ -25,6 +24,7 @@ def _example_feature_extractor(pixel_values: np.ndarray) -> np.ndarray:
     """
     return np.mean(pixel_values, axis=(0, 1))
 
+# Calculate the total pixel area of a single nucleus in an already isolated window
 def get_nuclei_size(nuclei_mask):
     pixel_cell_count = np.sum(nuclei_mask[:,:])
     return pixel_cell_count
