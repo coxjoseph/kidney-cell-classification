@@ -7,9 +7,11 @@ from dataclasses import dataclass
 from typing import Union
 from logging import getLogger
 from skimage.filters import threshold_isodata, threshold_otsu
-from skimage import io, transform
+from skimage import io, transform, color
 from feature_extraction import get_nuclei_size
-
+from scipy import ndimage
+from skimage.feature import peak_local_max
+from skimage.segmentation import watershed
 logger = getLogger()
 
 @dataclass
