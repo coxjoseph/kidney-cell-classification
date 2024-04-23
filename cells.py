@@ -10,15 +10,17 @@ from typing import Union
 from logging import getLogger
 from skimage.filters import threshold_isodata, threshold_otsu
 from skimage import io, transform
+import multiprocessing
 from feature_extraction import get_nuclei_size
 
-logger = logging.getLogger()
+logger = getLogger('classification')
 
 
 @dataclass
 class Nucleus:
-    center: tuple # Nucleus center in (m,n) coordinate space
-    pixel_area: int # Number of ON pixels in the binary mask
+    center: tuple
+    pixel_area: int
+
 
 @dataclass
 class Cell:
@@ -29,60 +31,63 @@ class Cell:
 
     def get_pixel_values(self, codex: np.ndarray) -> np.ndarray:
         radius = int(self.radius)
-
+        # logger.debug(radius)
+        # logger.debug(self.nucleus.center)
         x_center, y_center = self.nucleus.center
         x_start = int(max(x_center - radius, 0))
         x_end = int(min(x_center + radius, codex.shape[1]))
         y_start = int(max(y_center - radius, 0))
-        y_end = int(min(y_center + radius, codex.shape[0]))
+        y_end = int(min(y_center + radius, codex.shape[2]))
 
-        cropped_image = codex[y_start:y_end, x_start:x_end, :]
+        cropped_image = codex[:, x_start:x_end, y_start:y_end]
 
-        y, x = np.ogrid[:y_end - y_start, :x_end - x_start]
+        y, x = np.ogrid[:x_end - x_start, :y_end - y_start]
         mask = (x - radius) ** 2 + (y - radius) ** 2 > radius ** 2  # Calculate mask
-        mask = mask[:, :, np.newaxis]
+        mask = mask[np.newaxis, :, :]
         extended_mask = np.broadcast_to(mask, cropped_image.shape)
 
         masked_image = np.ma.array(cropped_image, mask=extended_mask)
-        logger.info('Channel-wise pixel values separated near nuclei...')
+        # logger.info('Channel-wise pixel values separated near nuclei...')
+        # logger.debug(f'{masked_image.shape = }')
         return masked_image
 
     def calculate_features(self, feature_extractors: list[callable], codex: np.ndarray) -> None:
         pixel_values = self.get_pixel_values(codex)
         features = []
         [features.extend(feature_extractor(pixel_values)) for feature_extractor in feature_extractors]
-        logger.info('Created features...')
-        logger.debug(f'DEBUG: {features}')
+        # logger.info('Created features...')
         self.features = tuple(features)
 
+
 # Calculates and returns a single small-window nucleus mask from the original CODEX DAPI layer.
-def get_nucleus_mask_dapi(nucleus_coordinates, codex: np.ndarray, DAPI_index, global_threshold, window_size=256, erosion_radius=2.5, isolated=True, visual_output=False) -> np.ndarray:
+def get_nucleus_mask_dapi(nucleus_coordinates, codex: np.ndarray, DAPI_index, global_threshold, window_size=256,
+                          erosion_radius=2.5, isolated=True, visual_output=False) -> np.ndarray:
     # Get bounding box coordinates
     upper_m, lower_m, left_n, right_n = get_bounding_box(nucleus_coordinates, window_size, codex_shape=codex.shape)
-    
+
     # Get slice of DAPI CODEX around the target coordinates
     subset_indices = (DAPI_index, slice(upper_m, lower_m), slice(left_n, right_n))
     nuclei_mask = codex[subset_indices]
-        
-    # Threshold nucleus stain using the higher of the global and local threshold values
-    # Setting a minimum threshold of the global prevents erroneous detection of nuclei in regions that contain zero nuclei
-    threshold = max(global_threshold, threshold_otsu(nuclei_mask)) 
-    nuclei_mask = (nuclei_mask > threshold).astype(np.uint8) # Binarizes the image
-    
+
+    # Threshold nucleus stain using the greater of the global and local threshold values
+    # Minimum threshold prevents erroneous detection of nuclei in regions that contain zero nuclei
+    threshold = max(global_threshold, threshold_otsu(nuclei_mask))
+    nuclei_mask = (nuclei_mask > threshold).astype(np.uint8)  # Binarizes the image
+
     if visual_output:
         plt.figure(figsize=(10, 8))
         plt.imshow(nuclei_mask, cmap='hot')
         plt.title(f'Nuclei Mask Before Distance Transform')
         plt.colorbar()
         plt.show()
-    
+
     # Perform distance transformation
     threshold_scaler = 1.5
     dist_transform = cv2.distanceTransform(nuclei_mask, cv2.DIST_L2, 3)
-    threshold = threshold_otsu(dist_transform)*threshold_scaler # Automatically obtain a threshold value
-    dist_transform = (dist_transform > threshold).astype(np.uint8) # Binarizes the image
+    threshold = threshold_otsu(dist_transform) * threshold_scaler  # Automatically obtain a threshold value
+    dist_transform = (dist_transform > threshold).astype(np.uint8)  # Binarizes the image
     nuclei_mask = dist_transform
-    
+
     if visual_output:
         plt.figure(figsize=(10, 8))
         plt.imshow(nuclei_mask, cmap='hot')
@@ -104,7 +109,7 @@ def get_nucleus_mask_dapi(nucleus_coordinates, codex: np.ndarray, DAPI_index, gl
     # Erase all neighboring, disconnected nuclei from the mask
     if isolated:
         nuclei_mask = isolate_nuclei(nuclei_mask, erosion_radius, visual_output)
-    
+
     return nuclei_mask
 
 
@@ -136,15 +141,10 @@ def process_image(image_subset: np.ndarray, nuclei_mask: np.ndarray, result_list
         result_list.extend(nuc_list)
 
 
-def extract_nuclei_coordinates(nuclei_mask: np.ndarray,
-                               downsample_factor: int = 2,
-                               num_threads: int = 8, visual_output: bool = False) -> list[Nucleus]:
-
+def extract_nuclei_coordinates(nuclei_mask: np.ndarray, downsample_factor=2,
+                               num_processes=8, visual_output=False) -> list[Nucleus]:
     scale_factor = 1 / downsample_factor
-    downsampled_mask = cv2.resize(nuclei_mask, None,
-                                  fx=scale_factor,
-                                  fy=scale_factor,
-                                  interpolation=cv2.INTER_AREA)
+    downsampled_mask = cv2.resize(nuclei_mask, None, fx=scale_factor, fy=scale_factor, interpolation=cv2.INTER_AREA)
 
     if visual_output:
         plt.figure(figsize=(10, 8))
@@ -153,60 +153,59 @@ def extract_nuclei_coordinates(nuclei_mask: np.ndarray,
         plt.colorbar()
         plt.show()
 
-    logger.info('Beginning nuclei coordinate extraction...')
-
-    height, width = nuclei_mask.shape[:2]
-    part_height = height // num_threads
-    image_parts = [nuclei_mask[i * part_height:(i + 1) * part_height, :] for i in range(num_threads)]
-
+    logger.info('Beginning nuclei coordinate extraction...')  # Flush to force immediate output
+    pool = multiprocessing.Pool()
     results = []
-    
     for process_ID in range(0, num_processes):
-        sublist = pool.apply_async(extract_nuclei_coordinates_parallel, (downsampled_mask, num_processes, process_ID, downsample_factor))
+        sublist = pool.apply_async(extract_nuclei_coordinates_parallel,
+                                   (downsampled_mask, num_processes, process_ID, downsample_factor))
         results.append(sublist)
-    
+
     # Wait for processes to finish
     pool.close()
     pool.join()
-    
+
     # Get the nuclei coordinate results
     nuclei_list = []
     for result in results:
-        nuclei_list.extend(result.get())   
-        
+        nuclei_list.extend(result.get())
+
     nucleus_count = len(nuclei_list)
-    print(f"Total nucleus count: {nucleus_count}", flush=True) # Flush to force immediate output 
+    logger.info(f"Total nucleus count: {nucleus_count}")
     return nuclei_list
-    
+
+
 # Individual process implementation for extracting nuclei coordinates from a slice of the image
 # Image is sliced into groups of rows based on process ID
 # Boundary conditions will cause double counting of some nuclei along the slice edges
 # Expects an already downsampled mask to be passed in
-def extract_nuclei_coordinates_parallel(nuclei_mask: np.ndarray, num_processes, process_ID, downsample_factor, verbose=True)-> list[Nucleus]:
+def extract_nuclei_coordinates_parallel(nuclei_mask: np.ndarray, num_processes, process_ID, downsample_factor,
+                                        verbose=True) -> list[Nucleus]:
     # Image is divided evenly along its rows for each process
     # Determines which block of rows this process operates on
     start_row = int((nuclei_mask.shape[0] / num_processes) * process_ID);
-    end_row = int(((nuclei_mask.shape[0] / num_processes)) * (process_ID+1));
-    
+    end_row = int(((nuclei_mask.shape[0] / num_processes)) * (process_ID + 1));
+
     nuclei_list = []
     count = 0
-   
+
     # Scan through the image until a nuclei pixel is encountered
     for m in range(start_row, end_row):
         for n in range(0, nuclei_mask.shape[1]):
             # If a pixel is hit, append it to the nuclei list and set all connected pixels to zero
             if nuclei_mask[m][n]:
-                coordinates_rescaled = (m*downsample_factor + int(downsample_factor/2),n*downsample_factor + int(downsample_factor/2)) # Convert coordinates back to original coordinate space
+                coordinates_rescaled = (m * downsample_factor + int(downsample_factor / 2), n * downsample_factor + int(
+                    downsample_factor / 2))  # Convert coordinates back to original coordinate space
                 # Nucleus size instantiated to -1 to indicate it has not been calculated yet
                 # Since only the downsampled mask is passed here, it is impossible to get an accurate size estimate
-                nuc = Nucleus(coordinates_rescaled, pixel_area=-1) 
+                nuc = Nucleus(coordinates_rescaled, pixel_area=-1)
                 nuclei_list.append(nuc)
-                cv2.floodFill(nuclei_mask, None, (n,m), 0)# Remove the found nucleus from the mask
+                cv2.floodFill(nuclei_mask, None, (n, m), 0)  # Remove the found nucleus from the mask
                 count = count + 1
-                if (count % 500 == 0): # Periodic progress update
-                    print(f"Current nucleus count (within process {process_ID}): {count}", flush=True) # Flush to force immediate output 
+                if count % 500 == 0:
+                    logger.debug(f"Current nucleus count (within process {process_ID}): {count}")
     return nuclei_list
-    
+
 
 def make_circular_kernel(kern_radius) -> np.ndarray:
     center = kern_radius
@@ -217,14 +216,14 @@ def make_circular_kernel(kern_radius) -> np.ndarray:
 
 def segment_nuclei_brightfield(brightfield: np.ndarray, window_size=512, visual_output=False) -> np.ndarray:
     # Build a whole-image nuclei segmentation by doing piecewise small window segmentations of the brightfield image and merging the results. If the image dimensions are not # multiples of the window size, the image will be cropped to the nearest multiple.
-    print('Segmenting brightfield nuclei...', flush=True)
-    
-    num_m_iterations = int(brightfield.shape[0]/window_size)
-    num_n_iterations = int(brightfield.shape[1]/window_size)
-    
+    logger.info('Segmenting brightfield nuclei...')
+
+    num_m_iterations = int(brightfield.shape[0] / window_size)
+    num_n_iterations = int(brightfield.shape[1] / window_size)
+
     # Allocate result array
-    whole_image_mask = np.empty((num_m_iterations*window_size, num_n_iterations*window_size),dtype=np.uint8)
-    
+    whole_image_mask = np.empty((num_m_iterations * window_size, num_n_iterations * window_size), dtype=np.uint8)
+
     ## START OF ANDREA CODE
     num_rows, num_cols, _ = brightfield.shape
 
@@ -235,17 +234,18 @@ def segment_nuclei_brightfield(brightfield: np.ndarray, window_size=512, visual_
     # Iterate through tiles
     for m in range(0, num_m_iterations):
         for n in range(0, num_n_iterations):
-            r = m*window_size
-            c = n*window_size
-            
-            tile = brightfield[r:r+window_size, c:c+window_size, :]
+            r = m * window_size
+            c = n * window_size
+
+            tile = brightfield[r:r + window_size, c:c + window_size, :]
 
             # Resize tile to a fixed size
             tile = cv2.resize(tile, (window_size, window_size))
 
             # Pad tile
             border_width = 1
-            tile_padded = np.pad(tile, ((border_width, border_width), (border_width, border_width), (0, 0)), mode='constant')
+            tile_padded = np.pad(tile, ((border_width, border_width), (border_width, border_width), (0, 0)),
+                                 mode='constant')
 
             # Define stain matrix for hematoxylin and eosin
             stain_matrix = np.array([[0.65, 0.70, 0.29],
@@ -253,7 +253,8 @@ def segment_nuclei_brightfield(brightfield: np.ndarray, window_size=512, visual_
                                      [0.27, 0.57, 0.78]])
 
             # Perform color deconvolution
-            stain_image = np.dot(np.reshape(tile_padded, (-1, 3)), np.linalg.inv(stain_matrix)).reshape(tile_padded.shape)
+            stain_image = np.dot(np.reshape(tile_padded, (-1, 3)), np.linalg.inv(stain_matrix)).reshape(
+                tile_padded.shape)
             stain_images.append(stain_image)
 
             # Extract the hematoxylin channel 
@@ -289,7 +290,7 @@ def segment_nuclei_brightfield(brightfield: np.ndarray, window_size=512, visual_
     # Display center tile results
     center_tile_index_row = num_rows // 2 // window_size
     center_tile_index_col = num_cols // 2 // window_size
-    
+
     if (visual_output):
         plt.figure(figsize=(18, 6))
 
@@ -299,47 +300,52 @@ def segment_nuclei_brightfield(brightfield: np.ndarray, window_size=512, visual_
         plt.axis('off')
 
         plt.subplot(1, 2, 2)
-        plt.imshow(segmented_nuclei[center_tile_index_row * (num_cols // window_size) + center_tile_index_col], cmap='nipy_spectral')
+        plt.imshow(segmented_nuclei[center_tile_index_row * (num_cols // window_size) + center_tile_index_col],
+                   cmap='nipy_spectral')
         plt.title('Segmented Nuclei (Center Tile) from H&E Segmentation')
         plt.axis('off')
 
         plt.show()
     ## END OF ANDREA CODE
-    
-    
+
     for m in range(0, num_m_iterations):
         for n in range(0, num_n_iterations):
             # Calculate the box boundaries for the current window
-            box_center = (m*window_size + window_size/2, n*window_size + window_size/2)
-            
+            box_center = (m * window_size + window_size / 2, n * window_size + window_size / 2)
+
             # Copy local nuclei mask to the global mask
-            whole_image_mask[m*window_size:(m+1)*window_size, n*window_size:(n+1)*window_size] = binary_masks[m*num_n_iterations+n]
-    
+            whole_image_mask[m * window_size:(m + 1) * window_size, n * window_size:(n + 1) * window_size] = \
+                binary_masks[m * num_n_iterations + n]
+
     return whole_image_mask
-    
-def segment_nuclei_dapi(codex: np.ndarray, DAPI_index=0, erosion_radius=2.5, window_size=256, visual_output=False) -> np.ndarray:
+
+
+def segment_nuclei_dapi(codex: np.ndarray, DAPI_index=0, erosion_radius=2.5, window_size=256,
+                        visual_output=False) -> np.ndarray:
     # Build a whole-image nuclei segmentation by doing piecewise small window segmentations of the DAPI image and merging the results. If the image dimensions are not # multiples of the window size, the image will be cropped to the nearest multiple.
-    print('Segmenting DAPI nuclei...', flush=True)
-    
-    num_m_iterations = int(codex.shape[1]/window_size)
-    num_n_iterations = int(codex.shape[2]/window_size)
-    
+    logger.info('Segmenting DAPI nuclei...')
+
+    num_m_iterations = codex.shape[1] // window_size
+    num_n_iterations = codex.shape[2] // window_size
+
     # Allocate result array
-    whole_image_mask = np.empty((num_m_iterations*window_size, num_n_iterations*window_size),dtype=np.uint8)
+    whole_image_mask = np.empty((num_m_iterations * window_size, num_n_iterations * window_size), dtype=np.uint8)
     global_threshold = threshold_otsu(codex[DAPI_index])
-    
-    for m in range(0, num_m_iterations):
-        for n in range(0, num_n_iterations):
+
+    for m in range(num_m_iterations):
+        for n in range(num_n_iterations):
             # Calculate the box boundaries for the current window
-            box_center = (m*window_size + window_size/2, n*window_size + window_size/2)
-    
+            box_center = (m * window_size + window_size / 2, n * window_size + window_size / 2)
+
             # Get a local (small window) nuclei mask
-            local_mask = get_nucleus_mask_dapi(box_center, codex, DAPI_index, global_threshold=global_threshold, window_size=window_size, erosion_radius=erosion_radius, isolated=False, visual_output=False)
-            
+            local_mask = get_nucleus_mask_dapi(box_center, codex, DAPI_index, global_threshold=global_threshold,
+                                               window_size=window_size, erosion_radius=erosion_radius, isolated=False,
+                                               visual_output=False)
+
             # Copy local nuclei mask to the global mask
-            whole_image_mask[m*window_size:(m+1)*window_size, n*window_size:(n+1)*window_size] = local_mask
+            whole_image_mask[m * window_size:(m + 1) * window_size, n * window_size:(n + 1) * window_size] = local_mask
     return whole_image_mask
-           
+
 
 # Mask out all nuclei not connected to the nuclei at the center of the window
 def isolate_nuclei(nuclei_window: np.ndarray, erosion_radius, visual_output=False) -> np.ndarray:
@@ -349,7 +355,7 @@ def isolate_nuclei(nuclei_window: np.ndarray, erosion_radius, visual_output=Fals
     cv2.floodFill(isolated_window, None, (center, center),
                   primary_nuclei_marker)  # Give all connected pixels the primary nuclei marker
     isolated_window = (isolated_window == primary_nuclei_marker).astype(np.uint8)
-    
+
     # Perform dilation to restore the nucleus to its pre-erosion size
     kernel = make_circular_kernel(erosion_radius)
     isolated_window = cv2.morphologyEx(isolated_window, cv2.MORPH_DILATE, kernel)
@@ -362,18 +368,21 @@ def isolate_nuclei(nuclei_window: np.ndarray, erosion_radius, visual_output=Fals
         plt.show()
 
     return isolated_window
-  
+
+
 def calculate_radii_from_nuclei(nuclei, nuclei_mask, window_size=256) -> list[int]:
     radii = []
     logger.info('Calculating radii from nuclei list...')
     for nucleus in nuclei:
-        nucleus_mask = slice_nucleus_window(nuclei_mask, center_coordinates=nucleus.center, window_size=window_size) # Grab the local nuclei window
-        _, labels = cv2.connectedComponents(nucleus_mask.astype(np.uint8)) # Count the number of nuclei
-        num_nearby_nuclei = max(np.max(labels), 1) # Floor 1 to prevent divison by zero
-        average_cell_area = (window_size*window_size)/num_nearby_nuclei
-        radius = sqrt(average_cell_area/3.14)
-        radii.append(radius)
+        nucleus_mask = slice_nucleus_window(nuclei_mask, center_coordinates=nucleus.center,
+                                            window_size=window_size)  # Grab the local nuclei window
+        _, labels = cv2.connectedComponents(nucleus_mask.astype(np.uint8))  # Count the number of nuclei
+        num_nearby_nuclei = max(np.max(labels), 1)  # Floor 1 to prevent divison by zero
+        average_cell_area = (window_size * window_size) / num_nearby_nuclei
+        radius = sqrt(average_cell_area / 3.14)
+        radii.append(int(radius))
     return radii
+
 
 def create_cells(nuclei: list[Nucleus], radii: list[int]) -> list[Cell]:
     if not len(nuclei) == len(radii):
@@ -389,82 +398,91 @@ def create_nuclei(nuclei_coordinates) -> list[Nucleus]:
         nuclei.append(Nucleus(center=nuc))
     return nuclei
 
-def get_bounding_box(nucleus_coordinates, window_size, codex_shape) -> list[int]:        
-        # Determine a bounding box for a small window around a target nucleus
-        upper_m = int(nucleus_coordinates[0]-window_size/2)
-        lower_m = int(nucleus_coordinates[0]+window_size/2)
-        left_n = int(nucleus_coordinates[1]-window_size/2)
-        right_n = int(nucleus_coordinates[1]+window_size/2)
 
-        # If the bounding box goes outside of the image, shift it such that it is inside of the image
-        if (left_n < 0):
-            right_n = right_n - left_n
-            left_n = 0
-        if (right_n >= codex_shape[2]):
-            left_n = left_n - (right_n - codex_shape[2]) - 1
-            right_n = codex_shape[2]-1
-        if (upper_m < 0):
-            lower_m = lower_m - upper_m
-            upper_m = 0
-        if (lower_m >= codex_shape[1]):
-            upper_m = upper_m - (lower_m - codex_shape[1]) - 1
-            lower_m = codex_shape[1]-1
-        return [upper_m, lower_m, left_n, right_n]
-        
+def get_bounding_box(nucleus_coordinates, window_size, codex_shape) -> list[int]:
+    # Determine a bounding box for a small window around a target nucleus
+    upper_m = int(nucleus_coordinates[0] - window_size / 2)
+    lower_m = int(nucleus_coordinates[0] + window_size / 2)
+    left_n = int(nucleus_coordinates[1] - window_size / 2)
+    right_n = int(nucleus_coordinates[1] + window_size / 2)
+
+    # If the bounding box goes outside the image, shift it such that it is inside the image
+    if left_n < 0:
+        right_n = right_n - left_n
+        left_n = 0
+    if right_n >= codex_shape[2]:
+        left_n = left_n - (right_n - codex_shape[2]) - 1
+        right_n = codex_shape[2] - 1
+    if upper_m < 0:
+        lower_m = lower_m - upper_m
+        upper_m = 0
+    if lower_m >= codex_shape[1]:
+        upper_m = upper_m - (lower_m - codex_shape[1]) - 1
+        lower_m = codex_shape[1] - 1
+    return [upper_m, lower_m, left_n, right_n]
+
+
 def slice_nucleus_window(nuclei_mask: np.ndarray, center_coordinates, window_size) -> np.ndarray:
     # Grab the relevant local nucleus segmentation from a larger nuclei mask
-    codex_shape = (1, nuclei_mask.shape[0], nuclei_mask.shape[1]) # CODEX isn't passed here, but only second two dimensions are needed
+    codex_shape = (
+        1, nuclei_mask.shape[0],
+        nuclei_mask.shape[1])  # CODEX isn't passed here, but only second two dimensions are needed
     upper_m, lower_m, left_n, right_n = get_bounding_box(center_coordinates, window_size, codex_shape=codex_shape)
-    nucleus_mask = nuclei_mask[upper_m:lower_m, left_n:right_n] # Grab the relevant window of the already segmented nucleus mask
+    nucleus_mask = nuclei_mask[upper_m:lower_m,
+                               left_n:right_n]  # Grab the relevant window of the already segmented nucleus mask
     return nucleus_mask
-    
+
+
 # Removes a percentage of the largest nuclei from a binary mask
-# Intent is to improve H&E segmentation by removing large non-cell artifacts (such as slice boundaries) from the segmentation
-def remove_largest_nuclei(nuclei: list[Nucleus], nuclei_mask: np.ndarray, cull_percent=0.05, visual_output=False) -> np.ndarray:
-    print('Removing large outlier nuclei...')
-    
-    if (visual_output):
+# Goal: improve H&E segmentation by removing large non-cell artifacts (such as slice boundaries) from the segmentation
+def remove_largest_nuclei(nuclei: list[Nucleus], nuclei_mask: np.ndarray, cull_percent=0.05,
+                          visual_output=False) -> np.ndarray:
+    logger.info('Removing large outlier nuclei...')
+
+    if visual_output:
         # Output not shown until after computation is complete
         plt.figure(figsize=(18, 6))
         plt.subplot(1, 2, 1)
         plt.imshow(nuclei_mask, cmap='gray')
         plt.title('Binary Mask before Culling Large Nuclei')
         plt.axis('off')
-    
+
     # Pull a numpy array of sizes from the nuclei list
     num_nuclei = len(nuclei)
     pixel_areas = np.empty(num_nuclei, dtype=int)
     for n in range(num_nuclei):
         pixel_areas[n] = nuclei[n].pixel_area
-        
-    hist, bin_edges = np.histogram(pixel_areas, range=(0,255), density=True) # Obtain the probability density function
-    cdf = np.cumsum(hist) # Obtain the cumulative density function
-    
+
+    hist, bin_edges = np.histogram(pixel_areas, range=(0, 255), density=True)  # Obtain the probability density function
+    cdf = np.cumsum(hist)  # Obtain the cumulative density function
+
     # Find an area threshold
     cdf_cutoff = 1 - cull_percent
-    index = np.argmax(cdf >= cdf_cutoff) # Gets the first index of where the cdf is greater than the cutoff
+    index = np.argmax(cdf >= cdf_cutoff)  # Gets the first index of where the cdf is greater than the cutoff
     threshold = bin_edges[index]
-    
+
     # Iterate through the list of nuclei and mask out those that have a size greater than the threshold
     for nuc in nuclei:
-        if (nuc.pixel_area >= threshold):
+        if nuc.pixel_area >= threshold:
             m = nuc.center[0]
             n = nuc.center[1]
-            cv2.floodFill(nuclei_mask, None, (n,m), 0)# Remove the found nucleus from the mask. OpenCV uses (x,y) coordinate space
-            
-    if (visual_output):
+            # Remove the found nucleus from the mask. OpenCV uses (x,y) coordinate space
+            cv2.floodFill(nuclei_mask, None, (n, m), 0)
+
+    if visual_output:
         plt.subplot(1, 2, 2)
         plt.imshow(nuclei_mask, cmap='gray')
         plt.title('Binary Mask after Culling Large Nuclei')
         plt.axis('off')
         plt.show()
-        
+
     return nuclei_mask
-    
+
+
 # Takes in a list of Nucleus objects, a global binary nucleus mask, and the maximum window size around each nucleus
 # Returns a list of Nuclei with their size parameters corrected
 def calculate_nuclei_sizes(nuclei: list[Nucleus], nuclei_mask, window_size=128) -> list[Nucleus]:
-    print('Calculating nuclei sizes...', flush=True)
+    logger.info('Calculating nuclei sizes...')
     debug_count = 0
     for nuc in nuclei:
         nucleus_mask = slice_nucleus_window(nuclei_mask, nuc.center, window_size)

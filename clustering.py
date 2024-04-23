@@ -7,13 +7,13 @@ import umap
 
 from cells import Cell
 
-logger = getLogger()
+logger = getLogger('classification')
 
 
 def dimensionality_reduction(features: np.ndarray, num_components: Union[int, None] = None,
                              reduction_type: str = 'UMAP') -> np.ndarray:
     if reduction_type == 'UMAP':
-        reducer = umap.UMAP(random_state=2024)
+        reducer = umap.UMAP()
         reduced_features = reducer.fit_transform(features)
     else:
         pca = PCA(n_components=num_components)
@@ -37,7 +37,7 @@ def cluster(cells: list[Cell], num_components: Union[int, None] = None,
         dbscan = DBSCAN(**kwargs)
         predictions = dbscan.fit_predict(reduced_features)
     else:
-        kmeans = KMeans(**kwargs)
+        kmeans = KMeans(n_clusters=20)
         predictions = kmeans.fit_predict(reduced_features)
     logger.info('Predicted each cell...')
     logger.debug(f'{predictions.shape=}')

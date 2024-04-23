@@ -1,15 +1,15 @@
 import argparse
 import logging
+
 import numpy as np
-import matplotlib.pyplot as plt
+
 from images import load_images, generate_classified_image, register_images
 from cells import segment_nuclei_brightfield, segment_nuclei_dapi, calculate_radii_from_nuclei, create_cells, extract_nuclei_coordinates, create_nuclei, get_nucleus_mask_dapi, slice_nucleus_window, calculate_nuclei_sizes, remove_largest_nuclei
-from visualization import overlay_cell_boundaries, overlay_nuclei_boundaries
-from skimage import io, transform
 from feature_extraction import generate_feature_extractors
 from clustering import cluster
 import sys
-import tifffile
+from tqdm import tqdm
+
 
 def parse_arguments() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description='Script to classify cells in a H&E stained image with a paired CODEX '
@@ -26,26 +26,27 @@ def parse_arguments() -> argparse.Namespace:
     return args_
 
 
-def initialize_logger(verbose: bool):
-    log_level = logging.DEBUG if verbose else logging.INFO
+def initialize_logger():
     format_str = '%(asctime)s [%(levelname)s]: %(message)s'
-    logging.basicConfig(level=log_level, format=format_str, stream=sys.stdout)
+    logging.basicConfig(format=format_str, stream=sys.stdout)
     
     
 if __name__ == '__main__':
     args = parse_arguments()
-    initialize_logger(args.verbose)
-    logger = logging.getLogger()
+    initialize_logger()
+    logger = logging.getLogger('classification')
+    log_level = logging.DEBUG if args.verbose else logging.INFO
+    logger.setLevel(log_level)
     logger.debug(f'Received arguments: {args}')
     
     brightfield, codex = load_images(args, rotate_brightfield=True)
     
     nuclei_mask_dapi = segment_nuclei_dapi(codex, DAPI_index=args.dapi, visual_output=False)
-    nuclei_mask_brightfield = segment_nuclei_brightfield(brightfield, window_size=512, visual_output=False)
+    # nuclei_mask_brightfield = segment_nuclei_brightfield(brightfield, window_size=512, visual_output=False)
     nuclei_dapi = extract_nuclei_coordinates(nuclei_mask_dapi, downsample_factor=4, num_processes=args.njobs, visual_output=False)
     nuclei_dapi = calculate_nuclei_sizes(nuclei_dapi, nuclei_mask_dapi, window_size=128)
-    nuclei_brightfield = extract_nuclei_coordinates(nuclei_mask_brightfield, downsample_factor=4, num_processes=args.njobs, visual_output=False)
-    nuclei_mask_brightfield = remove_largest_nuclei(nuclei_brightfield, nuclei_mask_brightfield, cull_percent=0.05, visual_output=True)
+    # nuclei_brightfield = extract_nuclei_coordinates(nuclei_mask_brightfield, downsample_factor=4, num_processes=args.njobs, visual_output=False)
+    # nuclei_mask_brightfield = remove_largest_nuclei(nuclei_brightfield, nuclei_mask_brightfield, cull_percent=0.05, visual_output=True)
     radii = calculate_radii_from_nuclei(nuclei_dapi, nuclei_mask_dapi, window_size=128)
     cells = create_cells(nuclei_dapi, radii)
     
@@ -62,7 +63,11 @@ if __name__ == '__main__':
     # END OF TEST CODE
 
     feature_extractors = generate_feature_extractors()
-    [cell.calculate_features(feature_extractors, codex) for cell in cells]
-    cluster(cells)  
-    classified_image = generate_classified_image(brightfield, cells, args, save=True)
 
+    for cell in tqdm(cells):
+        cell.calculate_features(feature_extractors, codex)
+
+    cluster(cells)
+
+    channel_last_codex = np.transpose(codex, (1, 2, 0))
+    generate_classified_image(channel_last_codex[:, :, 0], cells, args, save=True)
