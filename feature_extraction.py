@@ -2,6 +2,7 @@ import numpy as np
 from logging import getLogger
 from scipy.stats import skew, kurtosis
 
+
 logger = getLogger()
 
 
@@ -16,7 +17,8 @@ def generate_feature_extractors() -> list[callable]:
                # _channelwise_kurtosis,
                # _channelwise_skewness,
                _max_intensity,
-               _min_intensity]
+               _min_intensity, 
+               _radius]
 
     logger.debug(f'Feature extraction methods: {[method.__name__ for method in methods]}')
     return methods
@@ -58,7 +60,12 @@ def _min_intensity(pixel_values: np.ma.MaskedArray) -> np.ndarray:
 
 def _max_intensity(pixel_values: np.ma.MaskedArray) -> np.ndarray:
     return np.ma.max(pixel_values, axis=(0, 1))
-
+  
 
 def _radius(pixel_values):
     return pixel_values.shape[0] // 2
+
+def get_nuclei_size(nuclei_mask):
+    pixel_cell_count = np.sum(nuclei_mask[:,:])
+    return pixel_cell_count
+
