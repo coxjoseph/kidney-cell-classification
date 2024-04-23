@@ -8,7 +8,6 @@ from math import sqrt
 from dataclasses import dataclass
 from typing import Union
 from skimage.filters import threshold_isodata
-from feature_extraction import mask_array
 
 logger = logging.getLogger()
 
@@ -26,33 +25,27 @@ class Cell:
     label: Union[int, None] = None
 
     def get_pixel_values(self, codex: np.ndarray) -> np.ndarray:
-        r = int(self.radius)
+        radius = int(self.radius)
 
-        center_x, center_y = self.nucleus.center
-        start_x, end_x = max(center_x + r, 0), min(center_x + r, codex.shape[0])
-        start_y, end_y = max(center_y - r, 0), min(center_y + r, codex.shape[1])
+        x_center, y_center = self.nucleus.center
+        x_start = int(max(x_center - radius, 0))
+        x_end = int(min(x_center + radius, codex.shape[1]))
+        y_start = int(max(y_center - radius, 0))
+        y_end = int(min(y_center + radius, codex.shape[0]))
 
-        output_array = np.zeros((2 * r, 2 * r, codex.shape[2]))
+        cropped_image = codex[y_start:y_end, x_start:x_end, :]
 
-        x_len = abs(end_x - start_x) // 2
-        y_len = abs(end_y - start_y) // 2
-        x, y = np.ogrid[-x_len:x_len, -y_len:y_len]
-        distance_squared = x ** 2 + y ** 2
-        mask = distance_squared <= (r ** 2)
+        y, x = np.ogrid[:y_end - y_start, :x_end - x_start]
+        mask = (x - radius) ** 2 + (y - radius) ** 2 > radius ** 2  # Calculate mask
+        mask = mask[:, :, np.newaxis]
+        extended_mask = np.broadcast_to(mask, cropped_image.shape)
 
-        # Copy the relevant parts of each channel in codex
-        for i in range(codex.shape[2]):
-            cropped_channel = codex[start_x:end_x, start_y:end_y, i]
-            # Make sure the cropped_channel fits (I think this covers edge cases mentioned above)
-            min_x, min_y = max(r - center_x, 0), max(r - center_y, 0)
-            max_x, max_y = min_x + cropped_channel.shape[0], min_y + cropped_channel.shape[1]
-            output_array[min_x:max_x, min_y:max_y, i] = cropped_channel
-        output_array = mask_array(output_array)
+        masked_image = np.ma.array(cropped_image, mask=extended_mask)
         logger.info('Channel-wise pixel values separated near nuclei...')
-        return output_array
+        return masked_image
 
     def calculate_features(self, feature_extractors: list[callable], codex: np.ndarray) -> None:
-        pixel_values = self.get_pixel_values(codex)  # THESE WILL BE SQUARE ARRAYS
+        pixel_values = self.get_pixel_values(codex)
         features = []
         [features.extend(feature_extractor(pixel_values)) for feature_extractor in feature_extractors]
         logger.info('Created features...')

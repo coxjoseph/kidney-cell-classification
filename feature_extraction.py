@@ -5,22 +5,6 @@ from scipy.stats import skew, kurtosis
 logger = getLogger()
 
 
-def mask_array(pixel_values: np.ndarray) -> np.ma.MaskedArray:
-    height, width = pixel_values.shape
-    # TODO: doesnt gracefully cover edge cases where nucleus is on edge of array (should be very few of these)
-    radius = min(height, width) // 2
-    x, y = np.ogrid[:height, :width]
-
-    center_x = width // 2
-    center_y = height // 2
-
-    mask = ((x - center_x) ** 2 + (y - center_y) ** 2) > radius ** 2
-
-    masked_array = np.ma.masked_where(mask, pixel_values)
-
-    return masked_array
-
-
 def valid_values(masked_array: np.ma.MaskedArray) -> np.ndarray:
     return masked_array[masked_array.mask == False]
 
@@ -29,8 +13,8 @@ def generate_feature_extractors() -> list[callable]:
     methods = [_channelwise_mean,
                _channelwise_stdev,
                _channelwise_median,
-               _channelwise_kurtosis,
-               _channelwise_skewness,
+               # _channelwise_kurtosis,
+               # _channelwise_skewness,
                _max_intensity,
                _min_intensity]
 
@@ -75,3 +59,6 @@ def _min_intensity(pixel_values: np.ma.MaskedArray) -> np.ndarray:
 def _max_intensity(pixel_values: np.ma.MaskedArray) -> np.ndarray:
     return np.ma.max(pixel_values, axis=(0, 1))
 
+
+def _radius(pixel_values):
+    return pixel_values.shape[0] // 2

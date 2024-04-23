@@ -4,3 +4,4 @@ opencv-python>=4.9.0.80
 scikit-image>=0.19.2
 scikit-learn>=1.4.0
 tifffile>=2024.2.12
+umap-learn~=0.5.6
