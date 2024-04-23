@@ -1,4 +1,6 @@
 import argparse
+from typing import Optional, Tuple, Callable, Union
+
 import tifffile
 from logging import getLogger
 import numpy as np
@@ -6,15 +8,18 @@ from skimage.transform import resize
 from cells import Cell, slice_nucleus_window
 import matplotlib.pyplot as plt
 import cv2
+from functools import partial
 import imutils
 
 logger = getLogger()
+
 
 
 def load_images(args_: argparse.Namespace, rotate_brightfield) -> tuple[np.ndarray, np.ndarray]:
     print('Loading images...', flush=True)
     codex_array, he_array = tifffile.TiffFile(args_.codex).asarray(), tifffile.TiffFile(args_.he).asarray()
 
+    logger.info('Loaded CODEX and Brighfield tiff files...')
     logger.debug(f'{codex_array.shape=} | {he_array.shape=}')
     
     # Rotate the brightfield to match the orientation of the CODEX
@@ -26,13 +31,10 @@ def load_images(args_: argparse.Namespace, rotate_brightfield) -> tuple[np.ndarr
         # Flip the array horizontally to complete the rotation
         he_array = np.flip(he_array, axis=0)  # Flip along the first axis (rows)
 
-    target_shape = he_array.shape
-    #codex_array = resize(codex_array, output_shape=(target_shape[0], target_shape[1]), order=1, mode='reflect',
-    #                     anti_aliasing=True)
-
+    downsampled_codex, downsampled_he = preprocessing(codex_array, he_array)
     logger.info('Successfully loaded and resized images')
-    logger.debug(f'f{codex_array.shape=} | {he_array.shape}')
-    return he_array, codex_array
+    logger.debug(f'{downsampled_codex.shape=} | {downsampled_he.shape=}')
+    return downsampled_codex, downsampled_he
 
 # Reference: https://pyimagesearch.com/2020/08/31/image-alignment-and-registration-with-opencv/
 def register_images(dapi_mask: np.ndarray, brightfield_mask: np.ndarray, max_features, visual_output=False) -> np.ndarray:
@@ -149,7 +151,6 @@ def generate_classified_image(brightfield: np.ndarray,
                          f'Implement more colors or change the clustering parameters to output fewer labels')
 
     plt.figure()
-    # TODO: can we just do this with the bf image? unsure.
     plt.imshow(brightfield)
     for point, label in zip(centers, labels):
         x, y = point
