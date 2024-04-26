@@ -120,14 +120,15 @@ def generate_random_labels(codex_path, nuclei):
     return labels, rgb_values, codex_names
 
 # Wrapper function for XML generation
-def make_xml_annotations(cell_names, nuclei_centers, labels, filename='Brightfield_XML_Annot.xml'):
+def make_xml_annotations(cell_names, nuclei: list[Nucleus], labels, filename='Brightfield_XML_Annot.xml'):
     annotations = wak.Annotation()
     annotations.add_names(cell_names)
+    num_nuclei = len(nuclei)
     radius = 5
 
-    for ii in range(len(nuclei_centers)):
-        x = nuclei_centers[ii][1]
-        y = nuclei_centers[ii][0]
+    for i in range(num_nuclei):
+        x = nuclei[i].center[1]
+        y= nuclei[i].center[0]
         point = Point(y, x)
         circle = point.buffer(5).simplify(tolerance=0.05, preserve_topology=False)
         annotations.add_shape(poly=circle, box_crs=[0, 0], structure=cell_names[labels[ii]-1], name=f"Cell {ii}") #update crs if they're relative to smaller mask to be top left corner
