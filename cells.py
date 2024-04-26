@@ -8,13 +8,15 @@ from math import sqrt
 from dataclasses import dataclass
 from typing import Union
 from logging import getLogger
+from scipy import ndimage
 from skimage.filters import threshold_isodata, threshold_otsu
 from skimage import io, transform
 import multiprocessing
+from skimage.feature import peak_local_max
+from skimage.segmentation import watershed
 from feature_extraction import get_nuclei_size
 
 logger = getLogger('classification')
-
 
 @dataclass
 class Nucleus:
@@ -214,109 +216,133 @@ def make_circular_kernel(kern_radius) -> np.ndarray:
     return kernel
 
 
-def segment_nuclei_brightfield(brightfield: np.ndarray, window_size=512, visual_output=False) -> np.ndarray:
-    # Build a whole-image nuclei segmentation by doing piecewise small window segmentations of the brightfield image and merging the results. If the image dimensions are not # multiples of the window size, the image will be cropped to the nearest multiple.
-    logger.info('Segmenting brightfield nuclei...')
 
+def segment_nuclei_brightfield(brightfield: np.ndarray, window_size=512, visual_output=True) -> np.ndarray:
+    print('Segmenting brightfield nuclei...', flush=True)
+    
     num_m_iterations = int(brightfield.shape[0] / window_size)
     num_n_iterations = int(brightfield.shape[1] / window_size)
 
     # Allocate result array
     whole_image_mask = np.empty((num_m_iterations * window_size, num_n_iterations * window_size), dtype=np.uint8)
 
-    ## START OF ANDREA CODE
-    num_rows, num_cols, _ = brightfield.shape
-
-    stain_images = []
-    binary_masks = []
-    segmented_nuclei = []
-
-    # Iterate through tiles
-    for m in range(0, num_m_iterations):
-        for n in range(0, num_n_iterations):
+    # Convert image to float32
+    brightfield_adjusted = brightfield.astype(np.float32) / 255.0
+    
+    # Kernels for morphological operations
+    kernel = np.ones((5, 5), np.uint8)
+    closing_kernel = np.ones((3,3), np.uint8)
+    
+    # Kernels for morphological operations
+    dilation_kernel = np.ones((5, 5), np.uint8)
+    opening_kernel = np.ones((3,3), np.uint8)
+    erosion_kernel = np.ones((7,7), np.uint8)
+    closing_kernel = np.ones((3,3), np.uint8)
+    
+    # Process tiles
+    for m in range(num_m_iterations):
+        for n in range(num_n_iterations):
             r = m * window_size
             c = n * window_size
+            
+            # Extract the tile
+            tile = brightfield_adjusted[r:r+window_size, c:c+window_size, :]
 
-            tile = brightfield[r:r + window_size, c:c + window_size, :]
+            # Color deconvolution
+            stain_matrix = np.array([[0.711, 0.618, 0.336],
+                                     [0.596, 0.645, 0.478],
+                                     [0.43, -0.76, 0.488]])
+                                     
+            # Perform color deconvolution on each tile
+            stains = np.dot(-np.log(tile + 1e-9), np.linalg.inv(stain_matrix))
 
-            # Resize tile to a fixed size
-            tile = cv2.resize(tile, (window_size, window_size))
+            # Handle negative values
+            stains[stains < 0] = 0  
 
-            # Pad tile
-            border_width = 1
-            tile_padded = np.pad(tile, ((border_width, border_width), (border_width, border_width), (0, 0)),
-                                 mode='constant')
+            # Normalize the stain images
+            stains_max = np.max(stains, axis=(0, 1))
+            stains_max_normalized = stains_max.copy()
+            stains_max_normalized[stains_max_normalized == 0] = 1  # Avoid division by zero
+            stains_normalized = np.divide(stains, stains_max_normalized[np.newaxis, np.newaxis, :], 
+                                          out=np.zeros_like(stains), where=stains_max_normalized != 0)
 
-            # Define stain matrix for hematoxylin and eosin
-            stain_matrix = np.array([[0.65, 0.70, 0.29],
-                                     [0.07, 0.99, 0.11],
-                                     [0.27, 0.57, 0.78]])
+            hematoxylin_channel = stains[:, :, 0]
+            
+            # Replace NaN values with a predefined fill value (e.g., 0)
+            hematoxylin_channel_filled = np.nan_to_num(hematoxylin_channel, nan=0)
 
-            # Perform color deconvolution
-            stain_image = np.dot(np.reshape(tile_padded, (-1, 3)), np.linalg.inv(stain_matrix)).reshape(
-                tile_padded.shape)
-            stain_images.append(stain_image)
+            # Compute the range of valid values, excluding NaN
+            valid_min = np.min(hematoxylin_channel_filled)
+            valid_max = np.max(hematoxylin_channel_filled)
 
-            # Extract the hematoxylin channel 
-            hematoxylin_channel_padded = stain_image[:, :, 0]
+            # Scale the hematoxylin channel to the range [0, 255], handling NaN values
+            hematoxylin_channel_grayscale = ((hematoxylin_channel_filled - valid_min) / (valid_max - valid_min) * 255).astype(np.uint8)
 
-            # Adaptive thresholding using Gaussian filters
-            binary_mask = hematoxylin_channel_padded < threshold_otsu(hematoxylin_channel_padded)
+            # Thresholding
+            binary_mask =  hematoxylin_channel_grayscale > threshold_otsu(hematoxylin_channel_grayscale)
+
+            # Resize binary mask to match window size
             binary_mask_resized = cv2.resize(binary_mask.astype(np.uint8), (window_size, window_size))
 
-            # Morphological operations to remove small noise
-            kernel = np.ones((5, 5), np.uint8)
-            binary_mask_resized = cv2.erode(binary_mask_resized, kernel, iterations=1)
-            binary_mask_resized = cv2.dilate(binary_mask_resized, kernel, iterations=1)
+            # Closing to fill small holes inside the objects and connect nearby objects
+            binary_mask_resized = cv2.morphologyEx(binary_mask_resized, cv2.MORPH_CLOSE, closing_kernel)
 
-            binary_masks.append(binary_mask_resized)
-
-            # Watershed transform 
-            distance_transform = cv2.distanceTransform(np.uint8(~binary_mask_resized), cv2.DIST_L2, 3)
+            # Distance transform
+            distance_transform = ndimage.distance_transform_edt(binary_mask_resized)
+            
+            # Find markers using morphological operations
             _, markers = cv2.connectedComponents(binary_mask_resized)
-            markers = markers + 1
-            markers[~binary_mask_resized] = 0
 
-            # Ensure the input image and markers have the same size
-            if tile.shape[:2] != markers.shape:
-                markers = cv2.resize(markers, (tile.shape[1], tile.shape[0]), interpolation=cv2.INTER_NEAREST)
+            # Perform watershed segmentation
+            labels = watershed(-distance_transform, markers, mask=binary_mask_resized)
+            
+            # Threshold the segmented labels to obtain a binary image
+            binary_labels = labels.astype(np.uint8)
+            binary_labels[binary_labels > 0] = 1
+            
+            # Resize binary mask to match window size
+            binary_mask = cv2.resize(binary_labels.astype(np.uint8), (window_size, window_size))
 
-            labels = cv2.watershed(cv2.cvtColor(tile, cv2.COLOR_RGB2BGR), markers)
+            # Morphological operations: 
+            # Erosion to remove small bright regions and detach connected components
+            binary_mask = cv2.erode(binary_mask, erosion_kernel, iterations=1)
 
-            # Post-processing to clean up watershed segmentation
-            labels[binary_mask_resized == 0] = 0
-            segmented_nuclei.append(labels)
+            # Dilation to restore the original size of the objects while keeping them separated
+            binary_mask = cv2.dilate(binary_mask, dilation_kernel, iterations=1)
 
-    # Display center tile results
-    center_tile_index_row = num_rows // 2 // window_size
-    center_tile_index_col = num_cols // 2 // window_size
+            # Opening to remove small bright spots while preserving the shape of larger objects
+            binary_mask = cv2.morphologyEx(binary_mask, cv2.MORPH_OPEN, opening_kernel)
 
-    if (visual_output):
-        plt.figure(figsize=(18, 6))
+            # Closing to fill small holes inside the objects and connect nearby objects
+            binary_mask = cv2.morphologyEx(binary_mask, cv2.MORPH_CLOSE, closing_kernel)
 
-        plt.subplot(1, 2, 1)
-        plt.imshow(binary_masks[center_tile_index_row * (num_cols // window_size) + center_tile_index_col], cmap='gray')
+            # Find contours of the binary mask
+            contours, _ = cv2.findContours(binary_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+            # Create a black image to draw the filled polygons
+            filled_mask = np.zeros_like(binary_mask, dtype=np.uint8)
+
+            # Draw filled polygons for each contour
+            cv2.fillPoly(filled_mask, contours, color=255)  # Filling with 255 (white) for binary representation
+
+            # Update the whole image mask
+            whole_image_mask[r:r+window_size, c:c+window_size] = filled_mask.astype(bool).astype(np.uint8)  # Convert back to uint8
+                
+                
+    if visual_output:
+        center_tile_index_row = num_m_iterations // 3
+        center_tile_index_col = num_n_iterations // 3
+        plt.imshow(whole_image_mask[center_tile_index_row * window_size:(center_tile_index_row + 1) * window_size,
+                                      center_tile_index_col * window_size:(center_tile_index_col + 1) * window_size],
+                   cmap='gray')
         plt.title('Binary Mask (Center Tile) from H&E Segmentation')
         plt.axis('off')
-
-        plt.subplot(1, 2, 2)
-        plt.imshow(segmented_nuclei[center_tile_index_row * (num_cols // window_size) + center_tile_index_col],
-                   cmap='nipy_spectral')
-        plt.title('Segmented Nuclei (Center Tile) from H&E Segmentation')
-        plt.axis('off')
-
         plt.show()
-    ## END OF ANDREA CODE
 
-    for m in range(0, num_m_iterations):
-        for n in range(0, num_n_iterations):
-            # Calculate the box boundaries for the current window
-            box_center = (m * window_size + window_size / 2, n * window_size + window_size / 2)
-
-            # Copy local nuclei mask to the global mask
-            whole_image_mask[m * window_size:(m + 1) * window_size, n * window_size:(n + 1) * window_size] = \
-                binary_masks[m * num_n_iterations + n]
-
+        # Plot segmented nuclei (you may need to adjust this line based on your implementation)
+        plt.imshow(whole_image_mask, cmap='gray')
+        plt.axis('off')
+        plt.show()
     return whole_image_mask
 
 
