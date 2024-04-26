@@ -3,7 +3,7 @@ from logging import getLogger
 from scipy.stats import skew, kurtosis
 
 
-logger = getLogger()
+logger = getLogger('classification')
 
 
 def valid_values(masked_array: np.ma.MaskedArray) -> np.ndarray:
@@ -25,15 +25,15 @@ def generate_feature_extractors() -> list[callable]:
 
 
 def _channelwise_mean(pixel_values: np.ma.MaskedArray) -> np.ndarray:
-    return np.ma.mean(pixel_values, axis=(0, 1))
+    return np.ma.mean(pixel_values, axis=(1, 2))
 
 
 def _channelwise_stdev(pixel_values: np.ma.MaskedArray) -> np.ndarray:
-    return np.ma.std(pixel_values, axis=(0, 1))
+    return np.ma.std(pixel_values, axis=(1, 2))
 
 
 def _channelwise_median(pixel_values: np.ma.MaskedArray) -> np.ndarray:
-    return np.ma.median(pixel_values, axis=(0, 1))
+    return np.ma.median(pixel_values, axis=(1, 2))
 
 
 def _channelwise_skewness(pixel_values: np.ma.MaskedArray) -> np.ndarray:
@@ -55,15 +55,16 @@ def _channelwise_kurtosis(pixel_values: np.ma.MaskedArray) -> np.ndarray:
 
 
 def _min_intensity(pixel_values: np.ma.MaskedArray) -> np.ndarray:
-    return np.ma.min(pixel_values, axis=(0, 1))
+    return np.ma.min(pixel_values, axis=(1, 2))
 
 
 def _max_intensity(pixel_values: np.ma.MaskedArray) -> np.ndarray:
-    return np.ma.max(pixel_values, axis=(0, 1))
+    return np.ma.max(pixel_values, axis=(1, 2))
   
 
 def _radius(pixel_values):
-    return pixel_values.shape[0] // 2
+    return [pixel_values.shape[0] // 2]
+
 
 def get_nuclei_size(nuclei_mask):
     pixel_cell_count = np.sum(nuclei_mask[:,:])
