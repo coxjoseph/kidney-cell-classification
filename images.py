@@ -7,7 +7,6 @@ import numpy as np
 from cells import Cell, slice_nucleus_window
 import matplotlib.pyplot as plt
 import cv2
-from tqdm import tqdm
 import imutils
 
 logger = getLogger('classification')
@@ -150,14 +149,17 @@ def generate_classified_image(brightfield: np.ndarray,
 
     colors = [cmap(label) for label in labels]
 
-    plt.figure(figsize=(brightfield.shape[0], brightfield.shape[1]))
+    logger.info('Beginning image generation...')
+    plt.figure(figsize=(brightfield.shape[0] / 1000, brightfield.shape[1] / 1000))
+    logger.debug('Figure started')
     plt.tight_layout()
     plt.imshow(brightfield, cmap='gray')
-    plt.scatter(xs, ys, color=colors, s=1)
-
+    logger.debug('Figure plotted')
+    plt.scatter(xs, ys, color=colors, s=3)
+    logger.debug('Figure scattered')
     plt.axis('off')
     if save:
-        plt.savefig(args.output)
+        plt.savefig(args.output, dpi=300)
     plt.close()
     logger.info(f'Saved image at {args.output}')
 

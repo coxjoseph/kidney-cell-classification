@@ -5,10 +5,10 @@ import numpy as np
 
 from images import load_images, generate_classified_image, register_images
 from cells import segment_nuclei_brightfield, segment_nuclei_dapi, calculate_radii_from_nuclei, create_cells, extract_nuclei_coordinates, create_nuclei, get_nucleus_mask_dapi, slice_nucleus_window, calculate_nuclei_sizes, remove_largest_nuclei
-from feature_extraction import generate_feature_extractors
+from feature_extraction import generate_feature_extractors, calculate_cell_features
 from clustering import cluster
 import sys
-from tqdm import tqdm
+from concurrent.futures import ThreadPoolExecutor, wait
 
 
 def parse_arguments() -> argparse.Namespace:
@@ -63,9 +63,14 @@ if __name__ == '__main__':
     # END OF TEST CODE
 
     feature_extractors = generate_feature_extractors()
+    with ThreadPoolExecutor(max_workers=8) as executor:
+        futures = []
+        for cell in cells:
+            futures.append(executor.submit(calculate_cell_features,
+                                           cell=cell, feature_extractors=feature_extractors, codex=codex))
 
-    for cell in tqdm(cells):
-        cell.calculate_features(feature_extractors, codex)
+        wait(futures)
+        cells = [processed_cell.result() for processed_cell in futures]
 
     cluster(cells)
 

@@ -1,7 +1,5 @@
 import numpy as np
 from logging import getLogger
-from scipy.stats import skew, kurtosis
-
 
 logger = getLogger('classification')
 
@@ -14,8 +12,6 @@ def generate_feature_extractors() -> list[callable]:
     methods = [_channelwise_mean,
                _channelwise_stdev,
                _channelwise_median,
-               # _channelwise_kurtosis,
-               # _channelwise_skewness,
                _max_intensity,
                _min_intensity, 
                _radius]
@@ -36,24 +32,6 @@ def _channelwise_median(pixel_values: np.ma.MaskedArray) -> np.ndarray:
     return np.ma.median(pixel_values, axis=(1, 2))
 
 
-def _channelwise_skewness(pixel_values: np.ma.MaskedArray) -> np.ndarray:
-    channels_skewness = []
-    for channel_image in pixel_values:
-        channel_values = valid_values(channel_image)
-        channel_skew = skew(channel_values.flatten())
-        channels_skewness.append(channel_skew)
-    return np.array(channels_skewness)
-
-
-def _channelwise_kurtosis(pixel_values: np.ma.MaskedArray) -> np.ndarray:
-    channels_kurtosis = []
-    for channel_image in pixel_values:
-        channel_values = valid_values(channel_image)
-        channel_skew = kurtosis(channel_values.flatten())
-        channels_kurtosis.append(channel_skew)
-    return np.array(channels_kurtosis)
-
-
 def _min_intensity(pixel_values: np.ma.MaskedArray) -> np.ndarray:
     return np.ma.min(pixel_values, axis=(1, 2))
 
@@ -70,3 +48,7 @@ def get_nuclei_size(nuclei_mask):
     pixel_cell_count = np.sum(nuclei_mask[:,:])
     return pixel_cell_count
 
+
+def calculate_cell_features(cell, feature_extractors: list[callable], codex: np.ndarray):
+    cell.calculate_features(feature_extractors, codex)
+    return cell
