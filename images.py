@@ -155,11 +155,11 @@ def generate_classified_image(brightfield: np.ndarray,
     plt.tight_layout()
     plt.imshow(brightfield, cmap='gray')
     logger.debug('Figure plotted')
-    plt.scatter(xs, ys, color=colors, s=3)
+    plt.scatter(xs, ys, color=colors, s=1)
     logger.debug('Figure scattered')
     plt.axis('off')
     if save:
-        plt.savefig(args.output, dpi=300)
+        plt.savefig(args.output, dpi=500)
     plt.close()
     logger.info(f'Saved image at {args.output}')
 
