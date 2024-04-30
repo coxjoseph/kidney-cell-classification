@@ -23,14 +23,15 @@ def dimensionality_reduction(features: np.ndarray, num_components: Union[int, No
 
 
 def cluster(cells: list[Cell], num_components: Union[int, None] = None,
-            cluster_alg: str = 'KMeans', **kwargs) -> None:
+            cluster_alg: str = 'KMeans', reduction_alg='UMAP', **kwargs) -> None:
     features = []
     for cell in cells:
         features.append(cell.features)
-
+    logger.info(f'Clustering cells with the {cluster_alg} algorithm with dimensionality reduction {reduction_alg}...')
     features = np.array(features)
     logger.debug(f'{features.shape=}')
-    reduced_features = dimensionality_reduction(features, num_components=num_components)
+    reduced_features = dimensionality_reduction(features, num_components=num_components, reduction_type=reduction_alg)
+    logger.info('...reduced dimensionality')
     logger.debug(f'{reduced_features.shape=}')
 
     if cluster_alg == 'dbscan':
@@ -39,8 +40,8 @@ def cluster(cells: list[Cell], num_components: Union[int, None] = None,
     else:
         kmeans = KMeans(n_clusters=20)
         predictions = kmeans.fit_predict(reduced_features)
-    logger.info('Predicted each cell...')
+    logger.info('...predicted cells')
     logger.debug(f'{predictions.shape=}')
     for i, cell in enumerate(cells):
         cell.label = predictions[i]
-    logger.info('Cells clustered successfully!')
+    logger.info('Cells labelled successfully!')
