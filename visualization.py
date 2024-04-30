@@ -10,6 +10,10 @@ import wsi_annotations_kit.wsi_annotations_kit as wak
 from shapely.geometry import Point
 import random as rd
 import cv2
+import json
+import lxml.etree as ET
+import uuid
+
 
 
 def load_tiff_as_array(path: Union[str, PathLike]) -> np.ndarray:
@@ -120,7 +124,7 @@ def generate_random_labels(codex_path, nuclei):
     return labels, rgb_values, codex_names
 
 # Wrapper function for XML generation
-def make_xml_annotations(cell_names, nuclei: list[Nucleus], labels, filename='Brightfield_XML_Annot.xml'):
+def make_xml_annotations(cell_names, nuclei: list[Nucleus], labels, filename_xml='XML_Annotation.xml',filename_json='JSON_Annotation.json', m=-1):
     annotations = wak.Annotation()
     annotations.add_names(cell_names)
     num_nuclei = len(nuclei)
@@ -131,11 +135,15 @@ def make_xml_annotations(cell_names, nuclei: list[Nucleus], labels, filename='Br
         y= nuclei[i].center[0]
         point = Point(y, x)
         circle = point.buffer(5).simplify(tolerance=0.05, preserve_topology=False)
-        annotations.add_shape(poly=circle, box_crs=[0, 0], structure=cell_names[labels[ii]-1], name=f"Cell {ii}") #update crs if they're relative to smaller mask to be top left corner
+        annotations.add_shape(poly=circle, box_crs=[0, 0], structure=cell_names[labels[i]-1], name="") #update crs if they're relative to smaller mask to be top left corner
     print(annotations)
-    annotations.xml_save(filename)
+    if m != -1:
+        filename_xml = filename_xml[0:-4] + str(m) + '.xml'
+        filename_json = filename_json[0:-5] + str(m) + '.json'
+    print(filename_xml, filename_json)
+    annotations.xml_save(filename_xml)
+    annotations.json_save(filename_json)
     return None
-
 ###############################################################################################################################    
 
 if __name__ == '__main__':

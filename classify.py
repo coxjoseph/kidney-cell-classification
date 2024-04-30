@@ -39,7 +39,8 @@ if __name__ == '__main__':
 
     # END OF TESTING CODE
     
-    nuclei_mask = segment_nuclei_dapi(codex, DAPI_index=args.dapi)
+    #nuclei_mask = segment_nuclei_dapi(codex, DAPI_index=args.dapi)
+    nuclei_mask = segment_nuclei_brightfield(brightfield)
     nuclei = extract_nuclei_coordinates(nuclei_mask, downsample_factor=4, num_processes=args.njobs, visual_output=False)
     radii = calculate_radii_from_nuclei(nuclei, codex, DAPI_index=args.dapi, window_size=128)
     cells = create_cells(nuclei, radii)
@@ -66,7 +67,7 @@ if __name__ == '__main__':
     kidney_cell_labels, label_colors, tiff_section_names = generate_random_labels(codex_key_path, nuclei)  
     
     print('debug')
-    print(kidney_cell_labels)
+    #print(kidney_cell_labels)
     print(label_colors)
     print(tiff_section_names)
     print('end of generate random labels')
@@ -75,8 +76,18 @@ if __name__ == '__main__':
     print('Overlaying nuclei centers...', flush=True)
     #overlay_nuclei_centers(brightfield, nuclei, kidney_cell_labels, label_colors)
     print('end of overlay_nuclei centers')
-    make_xml_annotations(tiff_section_names, nuclei, kidney_cell_labels)
+    num_nuclei = len(nuclei)
+    for m in range(0,num_nuclei, 35000):
+        end_index = min(m+35000, num_nuclei)
+        nuclei_subsample = nuclei[m:end_index]
+        make_xml_annotations(tiff_section_names, nuclei_subsample, kidney_cell_labels,m=m)
+        print(f'xml file written, m ={m}', flush=True)
+        
+    #make_xml_annotations(tiff_section_names, nuclei, kidney_cell_labels)
     print('End of XML annotation', flush=True)
+#    print('making JSON')
+#    make_json_file()
+#    print('finished JSON')
 
     
    
