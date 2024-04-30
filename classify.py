@@ -74,5 +74,5 @@ if __name__ == '__main__':
 
     cluster(cells)
 
-    channel_last_codex = np.transpose(codex, (1, 2, 0))
+    channel_last_codex = np.transpose(codex, (2, 1, 0))
     generate_classified_image(channel_last_codex[:, :, 0], cells, args, save=True)

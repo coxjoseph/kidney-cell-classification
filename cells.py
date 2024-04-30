@@ -84,7 +84,7 @@ def get_nucleus_mask_dapi(nucleus_coordinates, codex: np.ndarray, DAPI_index, gl
         plt.show()
 
     # Perform distance transformation
-    threshold_scaler = 1.5
+    threshold_scaler = 1
     dist_transform = cv2.distanceTransform(nuclei_mask, cv2.DIST_L2, 3)
     threshold = threshold_otsu(dist_transform) * threshold_scaler  # Automatically obtain a threshold value
     dist_transform = (dist_transform > threshold).astype(np.uint8)  # Binarizes the image
