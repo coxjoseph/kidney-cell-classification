@@ -16,25 +16,23 @@ def load_images(args_: argparse.Namespace, rotate_brightfield: bool) -> Tuple[np
     logger.info('Loading images...')
     codex_array, he_array = tifffile.TiffFile(args_.codex).asarray(), tifffile.TiffFile(args_.he).asarray()
 
-    logger.info('Loaded CODEX and Brighfield tiff files...')
+    logger.info('...loaded CODEX and Brightfield tiff files')
     logger.debug(f'{codex_array.shape=} | {he_array.shape=}')
     
     # Rotate the brightfield to match the orientation of the CODEX
     if rotate_brightfield:
-        logger.info('Rotating brightfield...')
+        logger.info('...rotating brightfield')
         he_array = np.transpose(he_array, axes=(1, 0, 2))  # Swap rows and columns
         he_array = np.flip(he_array, axis=0)  # Flip along the first axis (rows)
 
-    # codex_array = np.transpose(codex_array, (1, 2, 0))
-    # codex_array = np.transpose(codex_array, (1, 2, 0))
-
-    logger.info('Successfully loaded and resized images')
+    logger.info('Successfully loaded and resized images!')
     logger.debug(f'{codex_array.shape=} | {he_array.shape=}')
     return he_array, codex_array
 
 
 # Reference: https://pyimagesearch.com/2020/08/31/image-alignment-and-registration-with-opencv/
-def register_images(dapi_mask: np.ndarray, brightfield_mask: np.ndarray, max_features, visual_output=False) -> np.ndarray:
+def register_images(dapi_mask: np.ndarray, brightfield_mask: np.ndarray, max_features,
+                    visual_output=False) -> np.ndarray:
     """
     Keypoint-based image registration
     
@@ -43,17 +41,13 @@ def register_images(dapi_mask: np.ndarray, brightfield_mask: np.ndarray, max_fea
     - brightfield_mask: A binary mask of nuclei segmentation from the brightfield H&E image. The dimensions and aspect 
                         ratio do not need to match the dapi_mask.
     """
-    logger.log('Aligning images...')
-    
-    # Take distance transform of the two nuclei masks
-    #dapi_mask = cv2.distanceTransform(np.uint8(dapi_mask), cv2.DIST_L2, 3)
-    #brightfield_mask = cv2.distanceTransform(np.uint8(brightfield_mask), cv2.DIST_L2, 3)
-    
+    logger.info('Aligning images...')
+
     # Convert the masks in uint8 arrays ranging from 0 to 255
     dapi_mask = dapi_mask.astype(np.uint8) * 255
     brightfield_mask = brightfield_mask.astype(np.uint8) * 255
     
-    # Detect keypoints from the binary masks
+    # Detect key points from the binary masks
     orb = cv2.ORB_create(max_features)
     (kpsA, descsA) = orb.detectAndCompute(dapi_mask, None) # Image to be warped
     (kpsB, descsB) = orb.detectAndCompute(brightfield_mask, None) # Template image
@@ -64,10 +58,10 @@ def register_images(dapi_mask: np.ndarray, brightfield_mask: np.ndarray, max_fea
     matches = matcher.match(descsA, descsB, None)
     
     # Sort the matches by their hamming distance
-    matches = sorted(matches, key=lambda x:x.distance)
+    matches = sorted(matches, key=lambda x: x.distance)
     keep_percent = 100/max_features
-    keep = int(len(matches) * keep_percent) # Calculate the number of matches to keep
-    matches = matches[:keep] # Discard the less favorable matches
+    keep = int(len(matches) * keep_percent)  # Calculate the number of matches to keep
+    matches = matches[:keep]  # Discard the less favorable matches
     
     logger.debug(f'Matches: {len(matches)}')
     if visual_output:
@@ -124,7 +118,7 @@ def register_images(dapi_mask: np.ndarray, brightfield_mask: np.ndarray, max_fea
         return aligned_dapi
 
 
-def generate_classified_image(brightfield: np.ndarray,
+def generate_classified_image(image: np.ndarray,
                               cells: list[Cell],
                               args: argparse.Namespace,
                               save: bool = True) -> None:
@@ -132,10 +126,10 @@ def generate_classified_image(brightfield: np.ndarray,
     ys = []
     labels = []
 
-    logger.info(f'Generating output tiff-file with dimensions {brightfield.shape}')
+    logger.info(f'Generating output tiff-file with dimensions {image.shape}')
 
     for cell in cells:
-        xs.append(cell.nucleus.center[0]), ys.append(cell.nucleus.center[1])
+        xs.append(cell.nucleus.center[1]), ys.append(cell.nucleus.center[0])
         labels.append(cell.label)
 
     num_colors = len(set(labels))
@@ -150,10 +144,10 @@ def generate_classified_image(brightfield: np.ndarray,
     colors = [cmap(label) for label in labels]
 
     logger.info('Beginning image generation...')
-    plt.figure(figsize=(brightfield.shape[0] / 1000, brightfield.shape[1] / 1000))
+    plt.figure(figsize=(image.shape[1] / 1000, image.shape[0] / 1000))
     logger.debug('Figure started')
     plt.tight_layout()
-    plt.imshow(brightfield, cmap='gray')
+    plt.imshow(image, cmap='gray')
     logger.debug('Figure plotted')
     plt.scatter(xs, ys, color=colors, s=1)
     logger.debug('Figure scattered')
@@ -161,7 +155,7 @@ def generate_classified_image(brightfield: np.ndarray,
     if save:
         plt.savefig(args.output, dpi=500)
     plt.close()
-    logger.info(f'Saved image at {args.output}')
+    logger.info(f'Saved image at {args.output}!')
 
 
 def global_dilate(nuclei_mask: np.ndarray, dilation_radius) -> np.ndarray:
@@ -169,4 +163,5 @@ def global_dilate(nuclei_mask: np.ndarray, dilation_radius) -> np.ndarray:
     kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2*dilation_radius, 2*dilation_radius))
     logger.info('Beginning dilation...')
     nuclei_mask_dilated = cv2.dilate(nuclei_mask_dilated, kernel)
+    logger.info('Dilated!')
     return nuclei_mask_dilated
