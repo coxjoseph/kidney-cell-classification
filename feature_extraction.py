@@ -1,30 +1,54 @@
 import numpy as np
 from logging import getLogger
 
+logger = getLogger('classification')
 
-logger = getLogger()
+
+def valid_values(masked_array: np.ma.MaskedArray) -> np.ndarray:
+    return masked_array[masked_array.mask == False]
 
 
 def generate_feature_extractors() -> list[callable]:
-    # To use this, add new features to the end of this methods variable. Don't call them :)
-    #   Each feature extractor should expect an input array of a square numpy matrix of an area around a cell called
-    #   pixel_values. This matrix will contain all channels in the codex. It should output an iterable, as the outputs
-    #   will be unwrapped with .extend()
-    methods = [_example_feature_extractor]
-    logger.debug(f'feature extraction methods: {methods}')
+    methods = [_channelwise_mean,
+               _channelwise_stdev,
+               _channelwise_median,
+               _max_intensity,
+               _min_intensity, 
+               _radius]
+
+    logger.debug(f'Feature extraction methods: {[method.__name__ for method in methods]}')
     return methods
 
 
-def _example_feature_extractor(pixel_values: np.ndarray) -> np.ndarray:
-    """
-    Example feature extractor, which implements the channel-wise mean of the pixel values.
-    Args:
-        pixel_values: numpy array of values near the cell for which features are supposed to be calculated.
+def _channelwise_mean(pixel_values: np.ma.MaskedArray) -> np.ndarray:
+    return np.ma.mean(pixel_values, axis=(1, 2))
 
-    Returns: channel-wise mean of pixel values
-    """
-    return np.mean(pixel_values, axis=(0, 1))
+
+def _channelwise_stdev(pixel_values: np.ma.MaskedArray) -> np.ndarray:
+    return np.ma.std(pixel_values, axis=(1, 2))
+
+
+def _channelwise_median(pixel_values: np.ma.MaskedArray) -> np.ndarray:
+    return np.ma.median(pixel_values, axis=(1, 2))
+
+
+def _min_intensity(pixel_values: np.ma.MaskedArray) -> np.ndarray:
+    return np.ma.min(pixel_values, axis=(1, 2))
+
+
+def _max_intensity(pixel_values: np.ma.MaskedArray) -> np.ndarray:
+    return np.ma.max(pixel_values, axis=(1, 2))
+  
+
+def _radius(pixel_values):
+    return [pixel_values.shape[0] // 2]
+
 
 def get_nuclei_size(nuclei_mask):
     pixel_cell_count = np.sum(nuclei_mask[:,:])
     return pixel_cell_count
+
+
+def calculate_cell_features(cell, feature_extractors: list[callable], codex: np.ndarray):
+    cell.calculate_features(feature_extractors, codex)
+    return cell
