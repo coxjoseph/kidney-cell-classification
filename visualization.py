@@ -6,6 +6,16 @@ import cv2
 import numpy as np
 import matplotlib.pyplot as plt
 import tifffile
+import seaborn as sns
+from cells import Nucleus
+import wsi_annotations_kit.wsi_annotations_kit as wak
+from shapely.geometry import Point
+import random as rd
+import cv2
+import json
+import lxml.etree as ET
+import uuid
+
 
 def load_tiff_as_array(path: Union[str, PathLike]) -> np.ndarray:
     """
@@ -118,6 +128,69 @@ def overlay_cell_boundaries(nuclei_mask: np.ndarray, radius) -> None:
     plt.title('Cell Boundary')
     plt.show()
     
+    
+###########################################################################################################################
+def overlay_nuclei_centers(image_data, nuclei: list[Nucleus], labels, label_colors):
+    num_nuclei = len(nuclei)
+    dots_image = np.zeros_like(image_data)
+    
+    for i in range(num_nuclei):
+        x = nuclei[i].center[1]
+        y= nuclei[i].center[0]
+        color = label_colors[labels[i]] if labels[i] < len(label_colors) else (0, 0, 0)  # Default color is black for unknown labels
+        
+        cv2.circle(dots_image, (int(x), int(y)), 10, color, -1)  # Increase dot size
+
+        # Overlay the dots image onto the original glomeruli image with increased opacity
+        result_image = cv2.addWeighted(image_data, 0.35, dots_image, 1, 0)
+        
+    cv2.imshow('Nuclei Centers Overlay', result_image)
+    cv2.waitKey(0)
+    cv2.destroyAllWindows()
+        
+    return result_image
+
+
+def generate_random_labels(codex_path, nuclei):
+    
+    with open(codex_path, 'r') as file:
+        codex_names = file.readlines()
+        codex_names = [name.strip().split(maxsplit=1)[-1] for name in codex_names]
+        
+        color_palette = sns.color_palette("colorblind", len(codex_names)) # Generate colorblind-friendly palette with seaborn
+        rgb_values = [(int(r * 255), int(g * 255), int(b * 255)) for (r, g, b) in color_palette] # Convert seaborn color palette to RGB values
+        
+        codex_channels = np.linspace(0, len(nuclei)-1,dtype=int)
+        labels = []
+        
+        for index in nuclei:
+            cell_label = rd.randint(0, len(codex_names)-1)
+            labels.append(cell_label)
+    
+    return labels, rgb_values, codex_names
+
+# Wrapper function for XML generation
+def make_xml_annotations(cell_names, nuclei: list[Nucleus], labels, filename_xml='XML_Annotation.xml',filename_json='JSON_Annotation.json', m=-1):
+    annotations = wak.Annotation()
+    annotations.add_names(cell_names)
+    num_nuclei = len(nuclei)
+    radius = 5
+
+    for i in range(num_nuclei):
+        x = nuclei[i].center[1]
+        y= nuclei[i].center[0]
+        point = Point(y, x)
+        circle = point.buffer(5).simplify(tolerance=0.05, preserve_topology=False)
+        annotations.add_shape(poly=circle, box_crs=[0, 0], structure=cell_names[labels[i]-1], name="") #update crs if they're relative to smaller mask to be top left corner
+    print(annotations)
+    if m != -1:
+        filename_xml = filename_xml[0:-4] + str(m) + '.xml'
+        filename_json = filename_json[0:-5] + str(m) + '.json'
+    print(filename_xml, filename_json)
+    annotations.xml_save(filename_xml)
+    annotations.json_save(filename_json)
+    return None
+###############################################################################################################################    
 
 if __name__ == '__main__':
     file_path = 'data/Section6_CODEX.tif'
@@ -126,3 +199,4 @@ if __name__ == '__main__':
     print(f'Image array is {"x".join(map(str, image_array.shape))}')
     channel_indices = np.linspace(0,40,dtype=int)
     display_channel_heatmaps(image_array, channel_indices)
+

@@ -1,15 +1,14 @@
 import argparse
 import logging
-
 import numpy as np
-
+import sys
+import cv2
 from images import load_images, generate_classified_image
 from cells import segment_nuclei_dapi, calculate_radii_from_nuclei, create_cells, extract_nuclei_coordinates, calculate_nuclei_sizes
+from visualization import overlay_cell_boundaries, make_xml_annotations, overlay_nuclei_centers, generate_random_labels
 from feature_extraction import generate_feature_extractors, calculate_cell_features
 from clustering import cluster
-import sys
 from concurrent.futures import ThreadPoolExecutor, wait
-
 
 def parse_arguments() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description='Script to classify cells from a CODEX file')
@@ -48,6 +47,7 @@ if __name__ == '__main__':
     
     _, codex = load_images(args, rotate_brightfield=True)
     
+
     nuclei_mask_dapi = segment_nuclei_dapi(codex, dapi_index=args.dapi,
                                            scaling_factor=args.scaling_factor, visual_output=False)
     nuclei_dapi = extract_nuclei_coordinates(nuclei_mask_dapi, downsample_factor=4,
@@ -72,3 +72,19 @@ if __name__ == '__main__':
 
     channel_last_codex = np.transpose(codex, axes=(1, 2, 0))
     generate_classified_image(channel_last_codex[:, :, 0], cells, args, save=True)
+
+    # random labels for cells#
+    print('Starting label generation...', flush=True)
+    codex_key_path = 'data/Section6_ChannelKey.txt'
+    kidney_cell_labels, label_colors, tiff_section_names = generate_random_labels(codex_key_path, nuclei)  
+    
+    num_nuclei = len(nuclei)
+    for m in range(0,num_nuclei, 35000):
+        end_index = min(m+35000, num_nuclei)
+        nuclei_subsample = nuclei[m:end_index]
+        make_xml_annotations(tiff_section_names, nuclei_subsample, kidney_cell_labels,m=m)
+        print(f'xml file written, m ={m}', flush=True)
+        
+    # Whole image XML file
+    #make_xml_annotations(tiff_section_names, nuclei, kidney_cell_labels)
+    print('End of XML annotation', flush=True)
