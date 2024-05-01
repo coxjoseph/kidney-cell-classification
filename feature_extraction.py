@@ -8,7 +8,7 @@ def valid_values(masked_array: np.ma.MaskedArray) -> np.ndarray:
     return masked_array[masked_array.mask == False]
 
 
-def generate_feature_extractors() -> list[callable]:
+def     generate_feature_extractors() -> list[callable]:
     methods = [_channelwise_mean,
                _channelwise_stdev,
                _channelwise_median,

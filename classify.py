@@ -17,14 +17,12 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument('--he', required=True, help='Path to H&E stained tiff file', type=str)
     parser.add_argument('--output', '-o',
                         help='output file (default to ./clustered/classified_stain.tif)',
-                        type=str, default='./clustered/classified_stain.tif')
+                        type=str, default='./clustered/clustered_stain.tif')
     parser.add_argument('--dapi', '-d', help='DAPI layer of CODEX file (default to 0)', type=int, default=0)
     parser.add_argument('--n_jobs', '-j', help='Number of CPU cores to run in parallel', type=int, default=4)
     parser.add_argument('--n_workers', '-w', help='Number of workers for multithreading',
                         type=int, default=8)
     parser.add_argument('--verbose', '-v', help='Print debug output', action='store_true')
-    parser.add_argument('--channel_last_transpose', type=str, default='120',
-                        help='Transpose for final display. Should place the channel dimension last (should end in 0)')
     parser.add_argument('--scaling_factor', '-s',
                         help='Scaling factor to apply to global threshold. Set higher for larger nuclei.', type=float,
                         default=1.5)
@@ -69,6 +67,8 @@ if __name__ == '__main__':
         cells = [processed_cell.result() for processed_cell in futures]
     logger.info('Feature extraction complete!')
     cluster(cells)
-
     channel_last_codex = np.transpose(codex, axes=(1, 2, 0))
     generate_classified_image(channel_last_codex[:, :, 0], cells, args, save=True)
+
+    clustered_nuclei = [cell.nucleus for cell in cells]
+    clustered_labels = [cell.label for cell in cells]
