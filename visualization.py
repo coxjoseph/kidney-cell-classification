@@ -157,8 +157,8 @@ def generate_random_labels(codex_path, nuclei):
         codex_names = file.readlines()
         codex_names = [name.strip().split(maxsplit=1)[-1] for name in codex_names]
         
-        color_palette = sns.color_palette("colorblind", len(codex_names)) # Generate colorblind-friendly palette with seaborn
-        rgb_values = [(int(r * 255), int(g * 255), int(b * 255)) for (r, g, b) in color_palette] # Convert seaborn color palette to RGB values
+        color_palette = sns.color_palette("colorblind", len(codex_names))  # Generate colorblind-friendly palette with seaborn
+        rgb_values = [(int(r * 255), int(g * 255), int(b * 255)) for (r, g, b) in color_palette]  # Convert seaborn color palette to RGB values
         
         codex_channels = np.linspace(0, len(nuclei)-1,dtype=int)
         labels = []
@@ -168,6 +168,7 @@ def generate_random_labels(codex_path, nuclei):
             labels.append(cell_label)
     
     return labels, rgb_values, codex_names
+
 
 # Wrapper function for XML generation
 def make_xml_annotations(cell_names, nuclei: list[Nucleus], labels, filename_xml='XML_Annotation.xml',filename_json='JSON_Annotation.json', m=-1):
@@ -190,7 +191,7 @@ def make_xml_annotations(cell_names, nuclei: list[Nucleus], labels, filename_xml
     annotations.xml_save(filename_xml)
     annotations.json_save(filename_json)
     return None
-###############################################################################################################################    
+
 
 if __name__ == '__main__':
     file_path = 'data/Section6_CODEX.tif'

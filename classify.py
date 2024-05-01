@@ -72,19 +72,3 @@ if __name__ == '__main__':
 
     clustered_nuclei = [cell.nucleus for cell in cells]
     clustered_labels = [cell.label for cell in cells]
-    
-    # random labels for cells#
-    logger.info('Starting label generation...')
-    codex_key_path = 'data/Section6_ChannelKey.txt'
-    kidney_cell_labels, label_colors, tiff_section_names = generate_random_labels(codex_key_path, nuclei)  
-    
-    num_nuclei = len(nuclei)
-    for m in range(0,num_nuclei, 35000):
-        end_index = min(m+35000, num_nuclei)
-        nuclei_subsample = nuclei[m:end_index]
-        make_xml_annotations(tiff_section_names, nuclei_subsample, kidney_cell_labels,m=m)
-        print(f'xml file written, m ={m}', flush=True)
-        
-    # Whole image XML file
-    #make_xml_annotations(tiff_section_names, nuclei, kidney_cell_labels)
-    print('End of XML annotation', flush=True)
