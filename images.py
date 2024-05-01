@@ -8,6 +8,7 @@ from cells import Cell, slice_nucleus_window
 import matplotlib.pyplot as plt
 import cv2
 import imutils
+import os
 
 logger = getLogger('classification')
 
@@ -153,6 +154,8 @@ def generate_classified_image(image: np.ndarray,
     logger.debug('Figure scattered')
     plt.axis('off')
     if save:
+        directory = os.path.split(args.output)[0]
+        os.makedirs(directory, exist_ok=True)
         plt.savefig(args.output, dpi=500)
     plt.close()
     logger.info(f'Saved image at {args.output}!')
