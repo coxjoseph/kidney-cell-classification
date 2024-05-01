@@ -10,6 +10,7 @@ from skimage.filters import threshold_isodata, threshold_otsu
 from skimage import io, transform
 from feature_extraction import get_nuclei_size
 
+
 logger = getLogger()
 
 @dataclass
@@ -71,12 +72,9 @@ def get_nucleus_mask_dapi(nucleus_coordinates, codex: np.ndarray, DAPI_index, gl
     
     # Get slice of DAPI CODEX around the target coordinates
     subset_indices = (DAPI_index, slice(upper_m, lower_m), slice(left_n, right_n))
-    nuclei_mask = codex[subset_indices]
-        
-    # Threshold nucleus stain using the higher of the global and local threshold values
-    # Setting a minimum threshold of the global prevents erroneous detection of nuclei in regions that contain zero nuclei
-    threshold = max(global_threshold, threshold_otsu(nuclei_mask)) 
-    nuclei_mask = (nuclei_mask > threshold).astype(np.uint8) # Binarizes the image
+    nuclei_mask = codex[subset_indices].copy()
+    scale_factor = 2
+    nuclei_mask = cv2.resize(nuclei_mask, None, fx=scale_factor, fy=scale_factor, interpolation=cv2.INTER_AREA)
     
     if visual_output:
         plt.figure(figsize=(10, 8))
@@ -85,17 +83,37 @@ def get_nucleus_mask_dapi(nucleus_coordinates, codex: np.ndarray, DAPI_index, gl
         plt.colorbar()
         plt.show()
     
+    local_threshold = threshold_otsu(nuclei_mask)
+    threshold = max(global_threshold, local_threshold)
+    nuclei_mask = (nuclei_mask > threshold).astype(np.uint8) # Binarizes the image
+    
+    if visual_output:
+        print(f'Global threshold: {global_threshold}', flush=True)
+        print(f'Local threshold: {local_threshold}', flush=True)
+        plt.figure(figsize=(10, 8))
+        plt.imshow(nuclei_mask, cmap='hot')
+        plt.title(f'Nuclei Mask Before Distance Transform')
+        plt.colorbar()
+        plt.show()
+    
     # Perform distance transformation
-    threshold_scaler = 1.5
     dist_transform = cv2.distanceTransform(nuclei_mask, cv2.DIST_L2, 3)
+    
+    if visual_output:
+        plt.figure(figsize=(10, 8))
+        plt.imshow(dist_transform, cmap='hot')
+        plt.title(f'Small Window Nuclei Mask After Distance Transform')
+        plt.colorbar()
+        plt.show()
+        
+    threshold_scaler = 1.5
     threshold = threshold_otsu(dist_transform)*threshold_scaler # Automatically obtain a threshold value
-    dist_transform = (dist_transform > threshold).astype(np.uint8) # Binarizes the image
-    nuclei_mask = dist_transform
+    nuclei_mask = (dist_transform > threshold).astype(np.uint8) # Binarizes the image
     
     if visual_output:
         plt.figure(figsize=(10, 8))
         plt.imshow(nuclei_mask, cmap='hot')
-        plt.title(f'Small Window Nuclei Mask Before Erosion, After Distance Transform')
+        plt.title(f'Small Window Nuclei Mask After Rebinarization')
         plt.colorbar()
         plt.show()
     
@@ -114,8 +132,9 @@ def get_nucleus_mask_dapi(nucleus_coordinates, codex: np.ndarray, DAPI_index, gl
     if isolated:
         nuclei_mask = isolate_nuclei(nuclei_mask, erosion_radius, visual_output)
     
+    nuclei_mask = cv2.resize(nuclei_mask, None, fx=1/scale_factor, fy=1/scale_factor, interpolation=cv2.INTER_AREA)
     return nuclei_mask
-
+    
 # Wrapper function for parallel nuclei coordinate extraction
 # CODEX is downsampled prior to reduce execution time
 # If a small input subimage is used, decrease the process count to minimize boundary artifacts (duplicate nuclei)
@@ -297,7 +316,8 @@ def segment_nuclei_dapi(codex: np.ndarray, DAPI_index=0, erosion_radius=2.5, win
     
     # Allocate result array
     whole_image_mask = np.empty((num_m_iterations*window_size, num_n_iterations*window_size),dtype=np.uint8)
-    global_threshold = threshold_otsu(codex[DAPI_index])
+    global_threshold = threshold_otsu(codex[DAPI_index]) * 0.35
+    #global_threshold = 5
     
     for m in range(0, num_m_iterations):
         for n in range(0, num_n_iterations):
@@ -305,10 +325,17 @@ def segment_nuclei_dapi(codex: np.ndarray, DAPI_index=0, erosion_radius=2.5, win
             box_center = (m*window_size + window_size/2, n*window_size + window_size/2)
     
             # Get a local (small window) nuclei mask
-            local_mask = get_nucleus_mask_dapi(box_center, codex, DAPI_index, global_threshold=global_threshold, window_size=window_size, erosion_radius=erosion_radius, isolated=False, visual_output=False)
+            local_mask = get_nucleus_mask_dapi(box_center, codex, DAPI_index, global_threshold=global_threshold, window_size=window_size, erosion_radius=erosion_radius, isolated=False)
             
             # Copy local nuclei mask to the global mask
             whole_image_mask[m*window_size:(m+1)*window_size, n*window_size:(n+1)*window_size] = local_mask
+            
+    if visual_output:
+        plt.figure(figsize=(12, 4))
+        plt.imshow(whole_image_mask, cmap='hot')
+        plt.title(f'DAPI Nuclei Mask')
+        plt.colorbar()
+        plt.show()
     return whole_image_mask
            
 
@@ -387,50 +414,7 @@ def slice_nucleus_window(nuclei_mask: np.ndarray, center_coordinates, window_siz
     upper_m, lower_m, left_n, right_n = get_bounding_box(center_coordinates, window_size, codex_shape=codex_shape)
     nucleus_mask = nuclei_mask[upper_m:lower_m, left_n:right_n] # Grab the relevant window of the already segmented nucleus mask
     return nucleus_mask
-    
-# Removes a percentage of the largest nuclei from a binary mask
-# Intent is to improve H&E segmentation by removing large non-cell artifacts (such as slice boundaries) from the segmentation
-def remove_largest_nuclei(nuclei: list[Nucleus], nuclei_mask: np.ndarray, cull_percent=0.05, visual_output=False) -> np.ndarray:
-    print('Removing large outlier nuclei...')
-    
-    if (visual_output):
-        # Output not shown until after computation is complete
-        plt.figure(figsize=(18, 6))
-        plt.subplot(1, 2, 1)
-        plt.imshow(nuclei_mask, cmap='gray')
-        plt.title('Binary Mask before Culling Large Nuclei')
-        plt.axis('off')
-    
-    # Pull a numpy array of sizes from the nuclei list
-    num_nuclei = len(nuclei)
-    pixel_areas = np.empty(num_nuclei, dtype=int)
-    for n in range(num_nuclei):
-        pixel_areas[n] = nuclei[n].pixel_area
-        
-    hist, bin_edges = np.histogram(pixel_areas, range=(0,255), density=True) # Obtain the probability density function
-    cdf = np.cumsum(hist) # Obtain the cumulative density function
-    
-    # Find an area threshold
-    cdf_cutoff = 1 - cull_percent
-    index = np.argmax(cdf >= cdf_cutoff) # Gets the first index of where the cdf is greater than the cutoff
-    threshold = bin_edges[index]
-    
-    # Iterate through the list of nuclei and mask out those that have a size greater than the threshold
-    for nuc in nuclei:
-        if (nuc.pixel_area >= threshold):
-            m = nuc.center[0]
-            n = nuc.center[1]
-            cv2.floodFill(nuclei_mask, None, (n,m), 0)# Remove the found nucleus from the mask. OpenCV uses (x,y) coordinate space
-            
-    if (visual_output):
-        plt.subplot(1, 2, 2)
-        plt.imshow(nuclei_mask, cmap='gray')
-        plt.title('Binary Mask after Culling Large Nuclei')
-        plt.axis('off')
-        plt.show()
-        
-    return nuclei_mask
-    
+ 
 # Takes in a list of Nucleus objects, a global binary nucleus mask, and the maximum window size around each nucleus
 # Returns a list of Nuclei with their size parameters corrected
 def calculate_nuclei_sizes(nuclei: list[Nucleus], nuclei_mask, window_size=128) -> list[Nucleus]:
@@ -442,3 +426,15 @@ def calculate_nuclei_sizes(nuclei: list[Nucleus], nuclei_mask, window_size=128) 
         pixel_area = get_nuclei_size(nucleus_mask)
         nuc.pixel_area = pixel_area
     return nuclei
+    
+# Debug functions
+# ========================================================
+def plot_hist(image: np.array):
+    histogram = cv2.calcHist([image], [0], None, [256], [0, 256])
+    plt.figure()
+    plt.title("Grayscale Image Histogram")
+    plt.xlabel("Pixel Intensity")
+    plt.ylabel("Frequency")
+    plt.plot(histogram, color='black')
+    plt.xlim([0, 255])
+    plt.show()
