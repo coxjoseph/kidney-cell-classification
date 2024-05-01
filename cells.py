@@ -64,7 +64,7 @@ def get_nucleus_mask_dapi(nucleus_coordinates, codex: np.ndarray, dapi_index: in
     upper_m, lower_m, left_n, right_n = get_bounding_box(nucleus_coordinates, window_size, codex_shape=codex.shape)
 
     # Get slice of DAPI CODEX around the target coordinates
-    subset_indices = (DAPI_index, slice(upper_m, lower_m), slice(left_n, right_n))
+    subset_indices = (dapi_index, slice(upper_m, lower_m), slice(left_n, right_n))
     nuclei_mask = codex[subset_indices].copy()
     scale_factor = 2
     nuclei_mask = cv2.resize(nuclei_mask, None, fx=scale_factor, fy=scale_factor, interpolation=cv2.INTER_AREA)
@@ -346,7 +346,7 @@ def segment_nuclei_dapi(codex: np.ndarray, scaling_factor: float,
 
     # Allocate result array
     whole_image_mask = np.empty((num_m_iterations*window_size, num_n_iterations*window_size),dtype=np.uint8)
-    global_threshold = threshold_otsu(codex[DAPI_index]) * 0.35
+    global_threshold = threshold_otsu(codex[dapi_index]) * 0.35
     #global_threshold = 5
     
     for m in range(0, num_m_iterations):
@@ -363,7 +363,7 @@ def segment_nuclei_dapi(codex: np.ndarray, scaling_factor: float,
             # Copy local nuclei mask to the global mask
             whole_image_mask[m * window_size:(m + 1) * window_size, n * window_size:(n + 1) * window_size] = local_mask
             
-     if visual_output:
+    if visual_output:
         plt.figure(figsize=(12, 4))
         plt.imshow(whole_image_mask, cmap='hot')
         plt.title(f'DAPI Nuclei Mask')

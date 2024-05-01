@@ -47,15 +47,16 @@ if __name__ == '__main__':
     
 
     nuclei_mask_dapi = segment_nuclei_dapi(codex, dapi_index=args.dapi,
-                                           scaling_factor=args.scaling_factor, visual_output=False)
+                                           scaling_factor=args.scaling_factor, window_size=64, visual_output=False)
     nuclei_dapi = extract_nuclei_coordinates(nuclei_mask_dapi, downsample_factor=4,
                                              num_processes=args.n_jobs, visual_output=False)
-    nuclei_dapi = calculate_nuclei_sizes(nuclei_dapi, nuclei_mask_dapi, window_size=128)
+                                             
     radii = calculate_radii_from_nuclei(nuclei_dapi, nuclei_mask_dapi, window_size=128)
     cells = create_cells(nuclei_dapi, radii)
 
     feature_extractors = generate_feature_extractors()
     logger.info('Beginning feature extraction...')
+    
     with ThreadPoolExecutor(max_workers=args.n_workers) as executor:
         futures = []
         for cell in cells:
@@ -73,12 +74,14 @@ if __name__ == '__main__':
     clustered_nuclei = [cell.nucleus for cell in cells]
     clustered_labels = [cell.label for cell in cells]
     
-    # random labels for cells#
+    '''
+    # Brightfield XML annotation with random labels
     logger.info('Starting label generation...')
     codex_key_path = 'data/Section6_ChannelKey.txt'
-    kidney_cell_labels, label_colors, tiff_section_names = generate_random_labels(codex_key_path, nuclei)  
+    kidney_cell_labels, label_colors, tiff_section_names = generate_random_labels(codex_key_path, nuclei_brightfield)  
     
-    num_nuclei = len(nuclei)
+
+    num_nuclei = len(nuclei_brightfield)
     for m in range(0,num_nuclei, 35000):
         end_index = min(m+35000, num_nuclei)
         nuclei_subsample = nuclei[m:end_index]
@@ -88,3 +91,4 @@ if __name__ == '__main__':
     # Whole image XML file
     #make_xml_annotations(tiff_section_names, nuclei, kidney_cell_labels)
     print('End of XML annotation', flush=True)
+    '''
