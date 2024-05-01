@@ -49,6 +49,6 @@ def get_nuclei_size(nuclei_mask):
     return pixel_cell_count
 
 
-def calculate_cell_features(cell, feature_extractors: list[callable], codex: np.ndarray):
-    cell.calculate_features(feature_extractors, codex)
+def calculate_cell_features(cell, feature_extractors: list[callable]):
+    cell.calculate_features(feature_extractors)
     return cell

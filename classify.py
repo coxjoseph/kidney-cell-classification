@@ -5,10 +5,10 @@ import sys
 import cv2
 from images import load_images, generate_classified_image
 from cells import segment_nuclei_dapi, calculate_radii_from_nuclei, create_cells, extract_nuclei_coordinates, calculate_nuclei_sizes
-from visualization import overlay_cell_boundaries, make_xml_annotations, overlay_nuclei_centers, generate_random_labels
+from tqdm import tqdm
 from feature_extraction import generate_feature_extractors, calculate_cell_features
 from clustering import cluster
-from concurrent.futures import ThreadPoolExecutor, wait
+from concurrent.futures import ProcessPoolExecutor, wait
 
 def parse_arguments() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description='Script to classify cells from a CODEX file')
@@ -56,16 +56,22 @@ if __name__ == '__main__':
 
     feature_extractors = generate_feature_extractors()
     logger.info('Beginning feature extraction...')
+
+    for i, cell in enumerate(cells):
+        if i % 500 == 499:
+            logger.debug(f'Cell {i} set pixel values')
+        cell.set_pixel_values(codex)
     
-    with ThreadPoolExecutor(max_workers=args.n_workers) as executor:
+    with ProcessPoolExecutor(max_workers=args.n_jobs) as executor:
         futures = []
         for cell in cells:
             futures.append(executor.submit(calculate_cell_features,
-                                           cell=cell, feature_extractors=feature_extractors, codex=codex))
+                                           cell=cell, feature_extractors=feature_extractors))
 
         wait(futures)
         logger.debug(f'Completed {len(futures)} futures')
         cells = [processed_cell.result() for processed_cell in futures]
+
     logger.info('Feature extraction complete!')
     cluster(cells)
     channel_last_codex = np.transpose(codex, axes=(1, 2, 0))

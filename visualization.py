@@ -93,7 +93,8 @@ def overlay_nuclei_boundaries(nucleus_coordinates, nuclei_mask, codex: np.ndarra
     plt.imshow(nuclei_mask_rgb)
     plt.title(f'Nuclei Boundaries at {nucleus_coordinates}')
     plt.show()
-        
+
+
 def overlay_cell_boundaries(nuclei_mask: np.ndarray, radius) -> None:
     """
     Draw a green circle of the cell radius over its nuclei mask.
